@@ -1475,6 +1475,12 @@ func ExecuteTask(
 
 		if attempt == maxAttempts {
 			logger.Log(fmt.Sprintf("%s[%s]%s %s[FAILED]%s in %v: %v", ColorRed, task.Name, ColorReset, ColorRed, ColorReset, duration.Round(time.Millisecond), lastErr))
+			if stdoutBuf.Len() > 0 {
+				fmt.Print(stdoutBuf.String())
+			}
+			if stderrBuf.Len() > 0 {
+				fmt.Fprint(os.Stderr, stderrBuf.String())
+			}
 			return TaskResult{
 				TaskName:         task.Name,
 				Status:           status,
