@@ -1,0 +1,20 @@
+{
+  "default": "build",
+  "tasks": {
+    "lint": {
+      "command": "go vet ./...",
+      "inputs": ["**/*.go"]
+    },
+    "test": {
+      "command": "go test -v ./...",
+      "inputs": ["**/*.go"],
+      "depends_on": ["lint"]
+    },
+    "build": {
+      "command": "go build -o app.exe main.go math.go",
+      "inputs": ["main.go", "math.go"],
+      "outputs": ["app.exe"],
+      "depends_on": ["test"]
+    }
+  }
+}
