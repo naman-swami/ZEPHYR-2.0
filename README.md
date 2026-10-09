@@ -299,6 +299,8 @@ go 1.22
 ```
 *(Empty `require` block. 100% Go Standard Library).*
 
+For an exhaustive audit of all 24 Go standard library architecture substitutions, see the [Standard Library Substitution Log](docs/STDLIB.md).
+
 ---
 
 ## 11. Reproducible Build Verification
