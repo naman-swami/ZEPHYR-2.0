@@ -16,7 +16,10 @@ bin/
 .taskcache/
 .cache-server/
 *.zcap
-
+# Media & Recordings
+*.mp4
+*.avi
+*.webm
 
 # OS / Editor Files
 .DS_Store
