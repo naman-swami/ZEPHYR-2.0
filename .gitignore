@@ -20,6 +20,8 @@ bin/
 *.mp4
 *.avi
 *.webm
+*.jpg
+*.png
 
 # OS / Editor Files
 .DS_Store
