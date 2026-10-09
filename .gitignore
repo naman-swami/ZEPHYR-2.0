@@ -16,6 +16,7 @@ bin/
 .taskcache/
 .cache-server/
 *.zcap
+*.zip
 # Media & Recordings
 *.mp4
 *.avi
