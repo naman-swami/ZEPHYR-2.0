@@ -6,10 +6,17 @@ taskrunner
 b1.exe
 b2.exe
 playground/app.exe
+bin/
 
-# Cache & Storage
+# Keys & Secrets
+*.key
+*.pub
+
+# Cache, Storage & Artifacts
 .taskcache/
 .cache-server/
+*.zcap
+
 
 # OS / Editor Files
 .DS_Store

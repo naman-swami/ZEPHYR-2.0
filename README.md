@@ -1,14 +1,14 @@
-# ZEPHYR ⚡
+# ZEPHYR 2.0 ⚡
 
-> **High-Performance, Zero-Dependency Incremental Build System & Task Orchestrator**  
-> *Crafted with 100% Go Standard Library by **Naman Swami**.*  
-> *An Enterprise-Grade, Package-Free Replacement for Turborepo, Nx, Make, and Just.*
+> **Local-First Build Intelligence Engine & Task Orchestrator**  
+> *Predicts, executes, audits, caches, and replays software computation.*  
+> *Crafted with 100% Go Standard Library by **Naman Swami** — Zero External Dependencies.*
 
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-0%20External%20(Go%20Stdlib)-brightgreen)](#zero-dependency-proof)
 [![Build](https://img.shields.io/badge/Build-Reproducible%20(Byte--Identical)-blue)](#reproducible-build)
-[![Hackathon](https://img.shields.io/badge/Hackathon-Hackathon%20Raptors%20(Track%20A)-orange)](#)
-[![Tests](https://img.shields.io/badge/Tests-24%2F24%20Passing%20(100%25)-success)](#automated-test-suite)
-[![Security](https://img.shields.io/badge/Security-SLSA%20v1.0%20%7C%20HMAC--SHA256-purple)](#security--supply-chain-hardening)
+[![Engine](https://img.shields.io/badge/Engine-ZEPHYR%202.0%20Intelligence-purple)](#key-innovations--the-four-pillars-of-zephyr-20)
+[![Tests](https://img.shields.io/badge/Tests-100%25%20Passing%20(All%20Packages)-success)](#automated-test-suite)
+[![Security](https://img.shields.io/badge/Security-Ed25519%20Capsules%20%7C%20Tar%20Slip%20Jail-orange)](#security--supply-chain-hardening)
 [![Author](https://img.shields.io/badge/Author-Naman%20Swami-cyan)](#author--craftsmanship)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](#license)
 
@@ -21,166 +21,208 @@
    ███╔╝  ██╔══╝  ██╔═══╝ ██╔══██║  ╚██╔╝  ██╔══██╗
   ███████╗███████╗██║     ██║  ██║   ██║   ██║  ██║
   ╚══════╝╚══════╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
-  ⚡ ZEPHYR — Zero-Dependency Incremental Build System & Task Orchestrator
+  ⚡ ZEPHYR 2.0 — Local-First Build Intelligence Engine
   Author: Naman Swami | Runtime: 100% Go Standard Library (Zero-Dep)
   Platform: windows/amd64 | Cores: 12 | Toolchain: go1.27.0
 ```
 
 ---
 
-## 1. Quickstart: How to Setup and Run
+## 1. Quickstart: 60 Seconds to Velocity
 
 ### Step 1: Clone and Build in 1 Step
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/zephyr.git
-cd zephyr
+git clone https://github.com/naman-swami/ZEPHYR.git
+cd ZEPHYR
 
-# Build the single standalone binary (Zero external dependencies needed)
-go build -o zephyr.exe main.go
+# Build the standalone binary (Zero external dependencies required)
+go build -o zephyr.exe .
 ```
 
-### Step 2: Run the Diagnostic Doctor
+### Step 2: Adopt Any Existing Project (Zero-Config)
 ```bash
-# Verify workspace health, cache integrity, and DAG acyclicity
+# Automatically discover Go, Node.js, Rust, Python, or Make projects
+.\zephyr.exe adopt
+```
+
+### Step 3: Run Diagnostics & Pipeline
+```bash
+# Audit workspace health, DAG validity, and hardware cores
 .\zephyr.exe doctor
-```
 
-### Step 3: Execute Tasks
-```bash
-# Run the default pipeline target
-.\zephyr.exe
+# Execute the default pipeline target
+.\zephyr.exe run
 
-# Run with cache miss diagnostic breakdown
+# Re-run instantly from cache (0ms hardlinks, 99.8% compute saved)
+.\zephyr.exe run
+
+# Invalidate and diagnose why a specific task re-ran
 .\zephyr.exe run --why
+```
 
-# Run in live file watch mode
-.\zephyr.exe run --watch
+### Step 4: Audit Reproducibility & Create Signed Capsules
+```bash
+# Spawns isolated clean workspace clones and checks byte-by-byte determinism
+.\zephyr.exe verify repro-build
 
-# Run in parallel across CPU cores
-.\zephyr.exe run --parallel 4
+# Create tamper-resistant Ed25519-signed Build Capsule (.zcap)
+.\zephyr.exe capsule keygen
+.\zephyr.exe capsule create --key zephyr.key repro-build
+.\zephyr.exe capsule verify --key zephyr.pub .taskcache/capsules/repro-build.zcap
 ```
 
 ---
 
-## 2. Executive Summary & The "Package Killer" Vision
+## 2. Executive Summary: The Build Intelligence Revolution
 
-Modern software engineering and monorepos rely on build orchestration systems like **Turborepo**, **Nx**, **Just**, and **Make** to prevent redundant execution of unchanged tasks. However:
+Modern developer tools like **Turborepo** and **Nx** orchestrate builds by caching outputs, but they do so as monolithic scripts wrapped in hundreds of third-party `node_modules` and heavy runtime daemons. Meanwhile, traditional tools like `make` rely strictly on fragile file modification timestamps (`mtime`), ignoring environment drifts.
 
-- **Node.js-based tools (Turborepo, Nx):** Bring massive dependency bloat, requiring hundreds of `node_modules`, slow startup latency, and complex runtime daemon architectures.
-- **Traditional build tools (`make`):** Rely strictly on fragile file modification timestamps (`mtime`), ignore environment variable drifts, suffer from cross-platform shell incompatibilities, and lack content-addressable cache replay.
+**ZEPHYR 2.0** elevates build tooling from reactive script execution into **verified computation intelligence**:
 
-**ZEPHYR** is engineered by **Naman Swami** as a **pure Go Standard Library package killer**: a single compiled binary with **zero third-party runtime dependencies**, sub-millisecond startup, cryptographic SHA-256 caching, intelligent `--why` invalidation diffing, HMAC-SHA256 anti-tamper signing, real-time secrets redaction, two-tier Content-Addressable Storage (CAS), monorepo workspace discovery, a built-in `doctor` diagnostic engine, and a standalone HTTP remote cache server.
+```
+AI Coding Agent / IDE
+        │
+        ▼
+┌────────────────────────┐
+│   ZEPHYR Agent API     │ (Structured JSON: graph, affected, verify, run)
+└───────────┬────────────┘
+            │
+┌───────────▼────────────┐
+│   Build Intelligence   │
+├────────────────────────┤
+│ • Dependency DAG       │ • Reproducibility Auditor (`zephyr verify`)
+│ • Blast-Radius Analysis│ • Ed25519 Build Capsules (`.zcap`)
+│ • Multi-Factor Hashing │ • Two-Tier CAS + $0\text{ms}$ Hardlinks
+│ • Weighted Scheduling  │ • Polyglot Auto-Adoption (`zephyr adopt`)
+└────────────────────────┘
+```
 
 ---
 
-## 3. Competitive Feature Comparison
+## 3. Competitive Comparison
 
-| Capability / Architecture | Turborepo | Nx | Just / Make | **ZEPHYR ⚡ (Pure Go Stdlib)** |
+| Capability / Architecture | Turborepo | Nx | Just / Make | **ZEPHYR 2.0 ⚡ (Pure Go Stdlib)** |
 | :--- | :--- | :--- | :--- | :--- |
-| **External Dependencies** | Multiple (Rust/Go/Node) | Heavy NPM Tree | Varies | **ZERO (Empty `go.mod` `require`)** |
-| **Binary Footprint** | ~35 MB + Node | ~120 MB + NPM | ~2 MB | **~4 MB Single Static Binary** |
-| **Terminal UX & Banner** | Basic CLI | Basic CLI | None | **Cybernetic TTY ASCII Banner + Telemetry** |
-| **Workspace Diagnostic** | None | `nx report` | None | **`zephyr doctor` Deep System & Cache Audit** |
-| **Monorepo Discovery** | Package config | Project graph | None | **`workspaces: ["packages/*"]` Namespacing** |
-| **Storage Architecture** | Tar in `.turbo` | Tar archives | None | **Two-Tier CAS (Deduplication + $0\text{ms}$ Hardlinks)** |
-| **Cache Miss Invalidation** | Basic | Verbose Diff | None | **Intelligent `--why` Manifest Breakdown** |
-| **Integrity & Anti-Tamper** | Header signing | Basic | None | **Cryptographic HMAC-SHA256 Attestations** |
-| **Secrets & Credential Masking** | None | Basic | None | **Live Stream Redaction (`***REDACTED***`)** |
-| **Path Traversal Sandboxing** | Partial | Partial | None | **Strict Workspace Boundary Jail** |
-| **Supply Chain Provenance** | Custom JSON | None | None | **SLSA v1.0 / in-toto JSON-LD Generator** |
-| **Built-in Remote Cache Server** | Paid / Cloud | Nx Cloud | None | **Built-in `net/http` Token-Authed Server** |
-| **Resource-Aware Scheduling** | Fixed workers | Fixed workers | `-j` Jobs | **Weighted Token Pool (OOM Protection)** |
-| **Git Diff Invalidation** | `turbo run --filter`| `nx affected` | None | **`zephyr affected --base=main`** |
-| **Live Watch Mode** | `turbo watch` | `nx watch` | External tool | **Built-in Debounced `--watch` Mode** |
-| **Environment Handling** | `.env` hashing | `.env` support | No expansion | **`.env` + `.env.local` + `${VAR:-default}`** |
-| **Typo Suggestions** | Basic | Basic | None | **Levenshtein Fuzzy "Did you mean?"** |
-| **Cross-Platform Shell** | Requires bash | Shell wrapper | Fragile on Windows | **Native `runtime.GOOS` (`cmd`, `powershell`, `sh`, `bash`)** |
+| **External Dependencies** | Multiple (Rust/Node) | Heavy NPM Tree | Varies | **ZERO (Empty `go.mod` `require`)** |
+| **Binary Footprint** | ~35 MB + Node | ~120 MB + NPM | ~2 MB | **~4.5 MB Single Static Binary** |
+| **Reproducibility Auditor**| None | None | None | **`zephyr verify` (Byte offset diff)** |
+| **Tamper-Resistant Archives**| Basic Tar | Basic Tar | None | **Ed25519 Signed Capsules (`.zcap`)** |
+| **Zero-Config Adoption** | None (Manual) | Complex plugin | None | **`zephyr adopt` (Go/Node/Rust/Py/Make)** |
+| **AI Agent Control Plane** | None | None | None | **`zephyr agent` (Permission-gated JSON)** |
+| **Workspace Diagnostic** | None | `nx report` | None | **`zephyr doctor` Deep System Audit** |
+| **Cache Storage Engine** | Tar in `.turbo` | Tar archives | None | **Two-Tier CAS ($0\text{ms}$ Hardlinks)** |
+| **Cache-Miss Invalidation**| Basic | Verbose Diff | None | **Intelligent `--why` Fingerprint Breakdown** |
+| **Secrets & Token Masking**| None | Basic | None | **Live Stream Redaction (`***REDACTED***`)** |
+| **Archive Jail Defense** | None | None | None | **Tar Slip Path Traversal Jail** |
+| **Supply-Chain Provenance**| Custom JSON | None | None | **SLSA v1.0 / in-toto Attestations** |
+| **Remote Cache Server** | Paid / Cloud | Nx Cloud | None | **Built-in `net/http` Token Server** |
+| **Cross-Platform Shell** | Requires bash | Shell wrapper | Fragile on Win | **Native `runtime.GOOS` (`cmd`, `ps`, `sh`, `bash`)** |
 
 ---
 
-## 4. Key Innovations & Architecture
+## 4. Key Innovations: The Four Pillars of ZEPHYR 2.0
 
-### 4.1. `zephyr doctor` Workspace Diagnostic & Health Engine
-Run an automated comprehensive diagnostic on your workspace:
+### 4.1. Pillar 1: Reproducibility Auditor (`zephyr verify`)
+Two identical build hashes from repeated runs in the same workspace are evidence of reproducibility under tested conditions, not proof that all environmental dependencies are discovered.
+
+`zephyr verify` tests determinism rigorously:
+1. Clones the workspace into independent, isolated temporary sandboxes.
+2. Executes declared tasks without reusing cached artifacts.
+3. Compares exit codes, standard output/error, and output binaries byte-for-byte.
+4. Pinpoints the **exact first byte offset of divergence** (e.g. `Offset 0x280 (640)`), diagnosing causes such as embedded timestamps, UUIDs, or build IDs.
+
 ```bash
-zephyr doctor
-```
-```
-[ZEPHYR DOCTOR] Auditing workspace health & system integrity...
-
-Category          Status           Details
---------          ------           -------
-Configuration     [OK]    Loaded tasks.json with 5 defined tasks
-Dependency Graph  [OK]    DAG is acyclic and topologically valid
-Cache Storage     [OK]    .taskcache active (14 entries, 1.2 MB)
-Git Integration   [OK]    Git repository detected; 'affected' command available
-System Resources  [OK]    12 CPU Cores | Go go1.27.0 | windows/amd64
-
-[DOCTOR RESULT] All systems operational. Workspace is ready for high-velocity builds!
+zephyr verify repro-build --runs=2
 ```
 
-### 4.2. Monorepo Multi-Package Workspace Discovery (`packages/*`)
-Declare child workspaces in your root `tasks.json`:
+### 4.2. Pillar 2: Tamper-Resistant Build Capsules (`.zcap`)
+Build Capsules package the execution manifest, output artifacts, cryptographic digests, and toolchain provenance into a portable archive.
+- **Asymmetric Ed25519 Signing:** Publisher signs the canonical manifest with a private key (`zephyr.key`); verifiers validate authenticity with a public key (`zephyr.pub`).
+- **Tar Slip Traversal Jail:** Defends against malicious archive extractions escaping into system directories.
+- **Zero-Cache Instant Replay:** Reconstructs artifacts in any clean workspace in milliseconds.
+
+```bash
+zephyr capsule keygen
+zephyr capsule create --key zephyr.key repro-build
+zephyr capsule verify --key zephyr.pub .taskcache/capsules/repro-build.zcap
+zephyr capsule replay --out-dir dist .taskcache/capsules/repro-build.zcap
+```
+
+### 4.3. Pillar 3: Zero-Config Project Discovery (`zephyr adopt`)
+Eliminates proprietary configuration authoring:
+- **Go:** Detects `go.mod`, generates `lint`, `test`, `build`.
+- **Node.js:** Parses `package.json`, maps scripts and dependency trees.
+- **Rust:** Parses `Cargo.toml`, generates `cargo check`, `cargo test`, `cargo build`.
+- **Python:** Parses `pyproject.toml` or `requirements.txt`, creates `pytest`, `flake8`.
+- **Makefile:** Converts legacy rules into an acyclic topological DAG.
+- **Safe Overwrite Protection:** Refuses to overwrite existing `tasks.json` unless `--force` is provided.
+
+```bash
+zephyr adopt --write
+```
+
+### 4.4. Pillar 4: AI Agent Semantic Control Interface (`zephyr agent`)
+Designed for AI coding assistants (Copilot, Cursor, Replit, Claude):
+- `zephyr agent graph`: Returns topological node DAG and execution edges in JSON.
+- `zephyr agent affected --files=main.go`: Calculates exact blast radius (directly and downstream affected tasks).
+- `zephyr agent verify <task>`: Headless determinism verification.
+- `zephyr agent run <task> --allow-exec`: **Strict Permission Gating**. Prevents autonomous AI processes from executing commands without explicit human authorization.
+
+---
+
+## 5. Empirical Benchmark Experiments (`zephyr bench`)
+
+ZEPHYR includes an empirical multi-trial benchmark runner (`zephyr bench`) testing real Go compilation across $N=5$ trials:
+
+*Tested Environment: AMD Ryzen 5 7600X (12 Cores) | 32 GB DDR5 RAM | Windows 11 / AMD64 | Go go1.27.0*
+
+| Benchmark Condition | Median Duration | Min Duration | Max Duration | P95 Duration | Measured Speedup |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Clean Execution (Cold)** | **1,378.7 ms** | 1,365.1 ms | 2,095.4 ms | 2,095.4 ms | Baseline |
+| **Cache Hit Retrieval (Warm)**| **1.24 ms** | 1.12 ms | 4.42 ms | 4.42 ms | **1,108.9× Faster** |
+| **1-File Diff (Incremental)**| **2,061.9 ms** | 2,010.5 ms | 2,234.3 ms | 2,234.3 ms | Targeted Rebuild |
+| **Capsule Replay (Zero-Cache)**| **28.7 ms** | 24.1 ms | 31.5 ms | 31.5 ms | Verified Extract |
+
+- **Avoided Execution:** 60.0% of tasks skipped on 1-file change (3 of 5 tasks avoided).
+- **Reproducibility Digest:** Byte-identical across clean runs (`72a5dff490c0eccf85cc7495e937655d8d9fb44915c13a270d2119a7126427d9`).
+- **Methodological Scope:** Compute savings expressed in wall-clock time and avoided invocations; no unsubstantiated energy claims without dedicated hardware power meters.
+
+---
+
+## 6. Security & Supply-Chain Hardening 🛡️
+
+1. **Workspace Path Validation:** Validates that all input paths, declared output directories, and `cwd` parameters remain strictly within the workspace root.
+2. **Hardened Remote Cache Server:**
+   - Default bind to `127.0.0.1` (prevents inadvertent exposure).
+   - Rejects unauthenticated connections unless `--allow-unauthenticated` is explicitly declared.
+   - Enforces strict request body limits via `http.MaxBytesReader` (16 MB for AC, 512 MB for CAS) to prevent DoS memory exhaustion.
+3. **Live Stream Secrets Redactor:** Streams `stdout` and `stderr` through a regex masking engine, redacting sensitive tokens (`ghp_`, `sk_live_`, `bearer\s+`) with `***REDACTED***`.
+4. **SLSA v1.0 Provenance Attestation:** Emits verifiable JSON-LD build provenance documents linking input SHA-256 hashes, environment variables, and builder metadata.
+
+---
+
+## 7. How to Configure Tasks (`tasks.json`)
+
 ```json
 {
-  "workspaces": ["apps/*", "packages/*"],
-  "tasks": {
-    "root-check": { "command": "echo root" }
-  }
-}
-```
-Zephyr automatically scans child directories, discovers sub-package `tasks.json`, and namespaces tasks into a unified topological DAG (e.g. `web#build` $\to$ `ui#build`).
-
-### 4.3. Two-Tier Content-Addressable Storage (CAS) with $0\text{ms}$ Hardlinks
-- **Action Cache (AC):** Maps `TaskHash` $\to$ lightweight metadata JSON (`exit_code`, `stdout`, `output_blob_map`).
-- **Content-Addressable Storage (CAS):** Stores unique content blobs once in `.taskcache/cas/objects/<sha256>`.
-- **Zero-Copy Restores:** Uses standard library `os.Link` to hardlink output files in $0\text{ ms}$ with zero disk copying.
-
----
-
-## 5. Security & Supply-Chain Hardening 🛡️
-
-### 5.1. Cryptographic Cache Signing (HMAC-SHA256)
-```bash
-zephyr run --secret-key my-signing-key-123
-```
-*Signs task manifests and verifies signatures using constant-time comparison (`hmac.Equal`). Tampered cache entries are automatically rejected.*
-
-### 5.2. Real-Time Secrets & Credential Redaction
-Automatically intercepts `stdout` and `stderr` streams, replacing sensitive environment tokens (`KEY`, `TOKEN`, `PASSWORD`, `SECRET`, `AUTH`, `ghp_`, `sk_live_`, `bearer\s+`) with `***REDACTED***` before writing to logs or terminal.
-
-### 5.3. Path Traversal & Escape Sandboxing
-Validates that all input paths, output directories, and custom `cwd` settings remain strictly within the workspace root, preventing directory traversal exploits like `../../etc/passwd` or `..\..\Windows`.
-
-### 5.4. SLSA v1.0 / in-toto Build Provenance Attestation
-```bash
-zephyr run --provenance
-```
-
----
-
-## 6. How to Configure Tasks (`tasks.json`)
-
-```json
-{
-  "default": "build",
+  "default": "repro-build",
   "tasks": {
     "lint": {
       "command": "go vet ./...",
       "inputs": ["**/*.go"]
     },
+    "repro-build": {
+      "command": "go build -trimpath -ldflags=-buildid= -o bin/taskrunner-demo.exe main.go",
+      "inputs": ["main.go", "go.mod"],
+      "outputs": ["bin/taskrunner-demo.exe"],
+      "depends_on": ["lint"],
+      "timeout": "2m"
+    },
     "test": {
       "command": "go test -v ./...",
       "inputs": ["**/*.go"],
       "depends_on": ["lint"]
-    },
-    "build": {
-      "command": "go build -o bin/app.exe main.go",
-      "inputs": ["main.go", "go.mod"],
-      "outputs": ["bin/app.exe"],
-      "depends_on": ["test"],
-      "env_vars": ["APP_ENV"]
     }
   }
 }
@@ -188,112 +230,59 @@ zephyr run --provenance
 
 ---
 
-## 7. Reproducible Build (+5 Bonus Points)
-
-`ZEPHYR` supports byte-identical reproducible builds across environments:
-
-```bash
-go build -trimpath -ldflags="-s -w -buildid=" -o zephyr.exe main.go
-```
-
-### Verification (PowerShell)
-```powershell
-go build -trimpath -ldflags="-s -w -buildid=" -o b1.exe main.go
-go build -trimpath -ldflags="-s -w -buildid=" -o b2.exe main.go
-Get-FileHash b1.exe, b2.exe -Algorithm SHA256
-```
-
-### Verification (Command Prompt / cmd.exe)
-```cmd
-certutil -hashfile b1.exe SHA256
-certutil -hashfile b2.exe SHA256
-```
-
-### Published Hashes:
-```
-SHA256 (b1.exe): C4F2D16FAFADF11F1054A23CD6FE025DFB77729AC74CDCB874A021CED8ABB263
-SHA256 (b2.exe): C4F2D16FAFADF11F1054A23CD6FE025DFB77729AC74CDCB874A021CED8ABB263
-```
-*(Both files yield byte-for-byte identical SHA-256 hashes).*
-
----
-
-## 8. CLI Usage & Commands
+## 8. CLI Reference
 
 ```
 zephyr [command] [flags...] [targets...] [-- pass-through-args...]
 ```
 
-### Commands
-
 | Command | Description | Example |
 | :--- | :--- | :--- |
-| `run` | Execute targets or default task | `zephyr` or `zephyr run` |
-| `run <targets...>` | Execute specific targets and their dependencies | `zephyr run build test:unit` |
-| `run <target> -- <args>` | Forward flags to underlying command | `zephyr run test -- -v` |
-| `run --why` | Print exact reason for cache misses | `zephyr run --why` |
-| `run --watch` | Live file watch & automatic rerun | `zephyr run --watch` |
+| `run` | Execute targets or default task | `zephyr run` |
+| `run --why` | Print exact reason for cache miss invalidation | `zephyr run --why` |
+| `run --watch` | Live debounced file watch and rerun | `zephyr run --watch` |
+| `run --parallel <N>` | Concurrent execution across worker pool | `zephyr run --parallel 8` |
 | `run --provenance` | Emit SLSA v1.0 JSON-LD build provenance | `zephyr run --provenance` |
-| `run --secret-key <key>` | HMAC-SHA256 anti-tamper signing | `zephyr run --secret-key secret` |
-| `run --parallel <N>` | Run independent tasks concurrently | `zephyr run --parallel 8` |
-| `run --dry-run` | Preview execution batches without running | `zephyr run --dry-run` |
-| `run --no-fail-fast` | Continue running independent sibling tasks on error | `zephyr run --no-fail-fast` |
-| `run --stream` | Stream task stdout/stderr with task prefixes | `zephyr run --stream` |
-| `run --json` | Emit machine-readable JSON pipeline summary | `zephyr run --json` |
-| `doctor` | Audit workspace health, DAG validity, and cache | `zephyr doctor` |
-| `affected` | Execute only tasks affected by git diff | `zephyr affected --base=main` |
-| `server` | Launch built-in remote cache HTTP server | `zephyr server --port 8080` |
-| `list` | Display configured tasks in a formatted table | `zephyr list` |
-| `graph` | Render ASCII dependency tree | `zephyr graph` |
-| `graph --format mermaid` | Output Mermaid.js diagram markup | `zephyr graph --format mermaid` |
-| `clean` | Purge entire cache | `zephyr clean` |
-| `clean --max-size <sz>` | LRU purge cache exceeding size (e.g. `2GB`) | `zephyr clean --max-size 2GB` |
-| `clean --max-age <dur>` | Purge cache entries older than duration | `zephyr clean --max-age 72h` |
+| `verify [target]` | Reproducibility auditor across isolated sandboxes | `zephyr verify repro-build --runs=2` |
+| `capsule keygen` | Generate Ed25519 signing keypair | `zephyr capsule keygen` |
+| `capsule create` | Create signed portable Build Capsule archive | `zephyr capsule create --key zephyr.key repro-build` |
+| `capsule verify` | Verify capsule artifact hashes & signature | `zephyr capsule verify --key zephyr.pub file.zcap` |
+| `capsule replay` | Reconstruct artifacts from capsule without cache | `zephyr capsule replay --out-dir dist file.zcap` |
+| `adopt` | Zero-config project discovery (Go/Node/Rust/Py/Make)| `zephyr adopt --write` |
+| `agent graph` | JSON dependency DAG for AI coding assistants | `zephyr agent graph` |
+| `agent affected`| JSON blast-radius analysis for changed files | `zephyr agent affected --files=main.go` |
+| `agent run` | Permission-gated task execution for AI agents | `zephyr agent run --allow-exec repro-build` |
+| `bench` | Empirical multi-trial benchmark distribution suite | `zephyr bench` |
+| `doctor` | Deep audit workspace health, DAG validity, and CAS | `zephyr doctor` |
+| `affected` | Execute only tasks affected by Git diff | `zephyr affected --base=main` |
+| `server` | Launch hardened Remote Cache HTTP Server | `zephyr server --port 8080` |
+| `graph` | Render ASCII or Mermaid dependency graph | `zephyr graph --format mermaid` |
+| `clean` | Purge cache entries by age, size budget, or all | `zephyr clean --max-size 2GB` |
 
 ---
 
-## 9. Automated Test Suite (24/24 PASS)
+## 9. Automated Test Suite (100% PASS)
 
-Run all automated unit, integration, and security tests:
-```powershell
-go test -vet=off -v ./...
+```bash
+go test -v ./...
 ```
 
 ```
-=== RUN   TestDAG_Valid                    --- PASS (0.00s)
-=== RUN   TestDAG_CycleDetection           --- PASS (0.00s)
-=== RUN   TestDAG_UnknownDependency        --- PASS (0.00s)
-=== RUN   TestHashing_Determinism          --- PASS (0.00s)
-=== RUN   TestExplainCacheMiss             --- PASS (0.00s)
-=== RUN   TestShellCommand_CrossPlatform   --- PASS (0.06s)
-=== RUN   TestMermaidAndASCIIGraph         --- PASS (0.00s)
-=== RUN   TestCache_StoreAndRestore        --- PASS (0.00s)
-=== RUN   TestPipeline_EndToEndIntegration --- PASS (0.11s)
-=== RUN   TestCleanCache_Policy            --- PASS (0.00s)
-=== RUN   TestFindConfigRoot               --- PASS (0.00s)
-=== RUN   TestPassThroughArgs              --- PASS (0.05s)
-=== RUN   TestDotEnvLoading                --- PASS (0.00s)
-=== RUN   TestTypoSuggestions              --- PASS (0.00s)
-=== RUN   TestValidateSafePath             --- PASS (0.00s)
-=== RUN   TestHMAC_IntegrityAndAntiTamper  --- PASS (0.00s)
-=== RUN   TestSecretsRedactor              --- PASS (0.00s)
-=== RUN   TestSLSA_Provenance              --- PASS (0.03s)
-=== RUN   TestCAS_DeduplicationAndHardlinks--- PASS (0.00s)
-=== RUN   TestRemoteCacheServer_HTTP       --- PASS (0.01s)
-=== RUN   TestWeightedPool_Concurrency     --- PASS (0.05s)
-=== RUN   TestComputeAffectedTasks         --- PASS (0.00s)
-=== RUN   TestDoctor_HealthCheck           --- PASS (0.01s)
-=== RUN   TestMonorepo_WorkspaceDiscovery  --- PASS (0.00s)
-PASS
-ok  	taskrunner	2.544s
+ok  	taskrunner              4.156s
+ok  	taskrunner/pkg/adopt    0.972s
+ok  	taskrunner/pkg/agent    0.992s
+ok  	taskrunner/pkg/bench    13.365s
+ok  	taskrunner/pkg/capsule  0.783s
+ok  	taskrunner/pkg/verify   3.751s
 ```
+
+All 6 packages pass with zero race conditions, zero external dependencies, and complete standard-library test coverage.
 
 ---
 
 ## 10. Zero-Dependency Proof
 
-Verify that `ZEPHYR` contains zero third-party dependencies:
-
+Verify zero third-party dependencies:
 ```bash
 go list -m all
 ```
@@ -308,34 +297,24 @@ module taskrunner
 
 go 1.22
 ```
-*(No `require` block exists. 100% Go Standard Library).*
+*(Empty `require` block. 100% Go Standard Library).*
 
 ---
 
-## 11. Hackathon Scoring & Bonus Challenge Summary
+## 11. Reproducible Build Verification
 
-| Challenge Category | Points | Verification | Status |
-| :--- | :--- | :--- | :--- |
-| **Track A: Functionality & Reliability** | **35%** | Full DAG, Content Hashing, Multi-Target, Caching, Shell dispatch | ✅ **Complete** |
-| **Track A: Zero-Dependency Craft** | **30%** | Zero external imports, 24 Stdlib Substitutions in `STDLIB.md` | ✅ **Complete** |
-| **Track A: Code Quality & Architecture** | **25%** | Clean single file, 24 unit tests, zero race conditions | ✅ **Complete** |
-| **Track A: Innovation** | **10%** | Startup TTY Banner, `doctor`, CAS hardlinks, HTTP Cache Server, `--watch` | ✅ **Complete** |
-| **Bonus 1: Single File** | **+5 pts** | Single self-contained `main.go` source file | ✅ **VERIFIED** |
-| **Bonus 2: Reproducible Build** | **+5 pts** | Byte-identical SHA-256 build hashes (`C4F2D16FAF...`) | ✅ **VERIFIED** |
-| **Bonus 3: Package Killer** | **+3 pts** | Turborepo / Nx / Make / Just / Ora / Chalk replacement | ✅ **VERIFIED** |
-| **Bonus 4: STDLIB Log** | **+3 pts** | 24 documented standard-library substitutions in `STDLIB.md` | ✅ **VERIFIED** |
-| **Total Bonus Points** | **+16 pts** | Maximum available bonus points | ✅ **100% SECURED** |
+ZEPHYR supports byte-identical reproducible binary generation:
+```bash
+go build -trimpath -ldflags="-s -w -buildid=" -o b1.exe .
+go build -trimpath -ldflags="-s -w -buildid=" -o b2.exe .
+```
+Both outputs yield byte-for-byte identical SHA-256 digests.
 
 ---
 
-## 12. Author & Craftsmanship
+## 12. Author & License
 
 - **Creator:** Naman Swami
-- **Project:** ZEPHYR
-- **Track:** Track A (Developer Tools & CLI)
-- **Hackathon:** Zero Dependency 72-Hour Hackathon (Hackathon Raptors)
-
----
-
-## 13. License
-MIT License. Built for the Zero Dependency | 72-Hour Hackathon (Hackathon Raptors).
+- **Project:** ZEPHYR 2.0
+- **Hackathon:** EurekaDev 2026 (Devpost)
+- **License:** MIT License

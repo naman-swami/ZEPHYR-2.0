@@ -503,12 +503,22 @@ func TestRemoteCacheServer_HTTP(t *testing.T) {
 		t.Fatalf("healthz failed: %v, code: %d", err, resp.StatusCode)
 	}
 
+	// 1. Missing Authorization header -> 401 Unauthorized
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/v1/ac/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 	respUnauth, err := http.DefaultClient.Do(req)
 	if err != nil || respUnauth.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401 Unauthorized, got %d", respUnauth.StatusCode)
+		t.Fatalf("expected 401 Unauthorized for missing auth, got %d", respUnauth.StatusCode)
 	}
 
+	// 2. Invalid Bearer token -> 401 Unauthorized
+	reqBad, _ := http.NewRequest(http.MethodGet, ts.URL+"/v1/ac/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	reqBad.Header.Set("Authorization", "Bearer invalid-wrong-token-abc")
+	respBad, err := http.DefaultClient.Do(reqBad)
+	if err != nil || respBad.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for invalid token, got %d", respBad.StatusCode)
+	}
+
+	// 3. Valid Bearer token -> 201 Created on PUT
 	actionHash := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	payload := `{"exit_code":0,"stdout":"test remote cache"}`
 
@@ -517,6 +527,41 @@ func TestRemoteCacheServer_HTTP(t *testing.T) {
 	respPut, err := http.DefaultClient.Do(reqPut)
 	if err != nil || respPut.StatusCode != http.StatusCreated {
 		t.Fatalf("Action Cache PUT failed, code: %d", respPut.StatusCode)
+	}
+
+	// 4. Server with empty token & allowUnauthenticated=false -> Rejects with 401
+	srvNoToken := NewRemoteCacheServerWithHost("127.0.0.1", 0, tmpDir, "", false)
+	muxNoToken := http.NewServeMux()
+	muxNoToken.HandleFunc("/v1/ac/", srvNoToken.authMiddleware(srvNoToken.handleActionCache))
+	tsNoToken := httptest.NewServer(muxNoToken)
+	defer tsNoToken.Close()
+
+	reqNoToken, _ := http.NewRequest(http.MethodGet, tsNoToken.URL+"/v1/ac/"+actionHash, nil)
+	respNoToken, err := http.DefaultClient.Do(reqNoToken)
+	if err != nil || respNoToken.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized when server has no token and allowUnauthenticated is false, got %d", respNoToken.StatusCode)
+	}
+
+	// 5. Server with allowUnauthenticated=true -> Allows request
+	srvOpen := NewRemoteCacheServerWithHost("127.0.0.1", 0, tmpDir, "", true)
+	muxOpen := http.NewServeMux()
+	muxOpen.HandleFunc("/v1/ac/", srvOpen.authMiddleware(srvOpen.handleActionCache))
+	tsOpen := httptest.NewServer(muxOpen)
+	defer tsOpen.Close()
+
+	reqOpen, _ := http.NewRequest(http.MethodGet, tsOpen.URL+"/v1/ac/"+actionHash, nil)
+	respOpen, err := http.DefaultClient.Do(reqOpen)
+	if err != nil || respOpen.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK when allowUnauthenticated is true, got %d", respOpen.StatusCode)
+	}
+
+	// 6. Oversized request body test -> rejected by MaxBytesReader with 400 Bad Request
+	oversizedData := strings.Repeat("A", MaxActionCacheBodyBytes+1024)
+	reqOversized, _ := http.NewRequest(http.MethodPut, ts.URL+"/v1/ac/"+actionHash, strings.NewReader(oversizedData))
+	reqOversized.Header.Set("Authorization", "Bearer "+authToken)
+	respOversized, err := http.DefaultClient.Do(reqOversized)
+	if err != nil || respOversized.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for oversized payload, got %d", respOversized.StatusCode)
 	}
 }
 

@@ -26,6 +26,12 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
+
+	"taskrunner/pkg/adopt"
+	"taskrunner/pkg/agent"
+	"taskrunner/pkg/bench"
+	"taskrunner/pkg/capsule"
+	"taskrunner/pkg/verify"
 )
 
 // ============================================================================
@@ -288,9 +294,13 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 // ============================================================================
-// SECTION 3: SECURITY & SANITIZATION JAIL
+// SECTION 3: WORKSPACE PATH VALIDATION
 // ============================================================================
 
+// ValidateSafePath verifies that targetPath resides within baseDir to prevent
+// directory traversal attacks.
+// Note: This validates file paths against workspace boundaries; it does not
+// constitute an OS-level execution sandbox for child processes.
 func ValidateSafePath(baseDir, targetPath string) (string, error) {
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
@@ -304,7 +314,7 @@ func ValidateSafePath(baseDir, targetPath string) (string, error) {
 
 	rel, err := filepath.Rel(absBase, absTarget)
 	if err != nil || strings.HasPrefix(rel, "..") || strings.HasPrefix(rel, "/..") || strings.HasPrefix(rel, "\\..") {
-		return "", fmt.Errorf("security violation: path '%s' escapes workspace boundary '%s'", targetPath, absBase)
+		return "", fmt.Errorf("workspace boundary violation: path '%s' escapes workspace '%s'", targetPath, absBase)
 	}
 
 	return absTarget, nil
@@ -1692,18 +1702,34 @@ func PrintSummaryTable(s *PipelineSummary) {
 // SECTION 15: ZERO-DEPENDENCY BUILT-IN HTTP REMOTE CACHE SERVER
 // ============================================================================
 
+const (
+	MaxActionCacheBodyBytes = 16 * 1024 * 1024  // 16 MB limit for Action Cache payloads
+	MaxCASBlobBytes         = 512 * 1024 * 1024 // 512 MB limit for CAS object payloads
+)
+
 type RemoteCacheServer struct {
-	port       int
-	storageDir string
-	authToken  string
-	server     *http.Server
+	host                string
+	port                int
+	storageDir          string
+	authToken           string
+	allowUnauthenticated bool
+	server              *http.Server
 }
 
 func NewRemoteCacheServer(port int, storageDir, authToken string) *RemoteCacheServer {
+	return NewRemoteCacheServerWithHost("127.0.0.1", port, storageDir, authToken, false)
+}
+
+func NewRemoteCacheServerWithHost(host string, port int, storageDir, authToken string, allowUnauth bool) *RemoteCacheServer {
+	if host == "" {
+		host = "127.0.0.1"
+	}
 	return &RemoteCacheServer{
-		port:       port,
-		storageDir: storageDir,
-		authToken:  authToken,
+		host:                host,
+		port:                port,
+		storageDir:          storageDir,
+		authToken:           authToken,
+		allowUnauthenticated: allowUnauth,
 	}
 }
 
@@ -1716,8 +1742,13 @@ func (s *RemoteCacheServer) Start() error {
 	mux.HandleFunc("/v1/cas/", s.authMiddleware(s.handleCAS))
 	mux.HandleFunc("/healthz", s.handleHealthz)
 
+	host := s.host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+
 	s.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.port),
+		Addr:    fmt.Sprintf("%s:%d", host, s.port),
 		Handler: mux,
 	}
 
@@ -1733,6 +1764,9 @@ func (s *RemoteCacheServer) authMiddleware(next http.HandlerFunc) http.HandlerFu
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
+		} else if !s.allowUnauthenticated {
+			http.Error(w, `{"error":"unauthorized: server requires authentication token"}`, http.StatusUnauthorized)
+			return
 		}
 		next(w, r)
 	}
@@ -1762,9 +1796,10 @@ func (s *RemoteCacheServer) handleActionCache(w http.ResponseWriter, r *http.Req
 		_, _ = w.Write(data)
 
 	case http.MethodPut:
-		data, err := io.ReadAll(r.Body)
+		limitedBody := http.MaxBytesReader(w, r.Body, MaxActionCacheBodyBytes)
+		data, err := io.ReadAll(limitedBody)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "payload read error or max size exceeded: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		_ = os.MkdirAll(filepath.Dir(targetPath), 0755)
@@ -1805,12 +1840,13 @@ func (s *RemoteCacheServer) handleCAS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		mw := io.MultiWriter(f, hasher)
-		_, err = io.Copy(mw, r.Body)
+		limitedBody := http.MaxBytesReader(w, r.Body, MaxCASBlobBytes)
+		_, err = io.Copy(mw, limitedBody)
 		f.Close()
 
 		if err != nil {
 			_ = os.Remove(tmpPath)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "payload read error or size limit exceeded: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -2355,6 +2391,11 @@ func printUsage() {
 	fmt.Println("  taskrunner [command] [flags...] [targets...]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  run [targets...]      Execute pipeline targets (default task if omitted)")
+	fmt.Println("  verify [targets...]   Reproducibility auditor detecting non-deterministic builds")
+	fmt.Println("  capsule <subcommand>  Manage portable Build Capsules (create, inspect, verify, replay)")
+	fmt.Println("  adopt                 Zero-config project discovery (Go, Node.js, Rust, Python, Make)")
+	fmt.Println("  agent <subcommand>    Structured JSON interface for AI coding agents & IDE tools")
+	fmt.Println("  bench                 Empirical benchmarks (incremental time, skip rate, reproducibility)")
 	fmt.Println("  doctor                Deep audit workspace health, DAG validity, and system integrity")
 	fmt.Println("  affected              Execute only tasks modified by Git diff")
 	fmt.Println("  server                Start built-in Zero-Dependency Remote Cache HTTP Server")
@@ -2603,13 +2644,27 @@ func main() {
 
 	case "server":
 		fs := flag.NewFlagSet("server", flag.ExitOnError)
+		host := fs.String("host", "127.0.0.1", "Host interface to bind on (default: 127.0.0.1)")
 		port := fs.Int("port", 8080, "Port to listen on")
 		storageDir := fs.String("dir", ".cache-server", "Directory to store cached blobs")
 		token := fs.String("token", os.Getenv("ZEPHYR_SERVER_TOKEN"), "Bearer token for auth")
+		allowUnauth := fs.Bool("allow-unauthenticated", false, "Allow access without authentication token (insecure)")
 		fs.Parse(args)
 
-		fmt.Printf("%s[SERVER]%s Starting Zero-Dependency Remote Cache Server on :%d...\n", ColorGreen, ColorReset, *port)
-		srv := NewRemoteCacheServer(*port, *storageDir, *token)
+		if *token == "" && !*allowUnauth {
+			fmt.Fprintf(os.Stderr, "%sSecurity Warning:%s Remote cache server requires an authentication token.\nPass --token <secret> or set ZEPHYR_SERVER_TOKEN environment variable.\nTo explicitly allow unauthenticated access on local development, pass --allow-unauthenticated.\n", ColorRed, ColorReset)
+			os.Exit(1)
+		}
+
+		if *allowUnauth {
+			fmt.Fprintf(os.Stderr, "\n%s================================================================================%s\n", ColorYellow, ColorReset)
+			fmt.Fprintf(os.Stderr, "%s[SECURITY WARNING] RUNNING IN UNSECURED MODE (--allow-unauthenticated)%s\n", ColorYellow, ColorReset)
+			fmt.Fprintf(os.Stderr, "Authentication is disabled. Any client on the network can read, upload, or poison cached build artifacts.\n")
+			fmt.Fprintf(os.Stderr, "%s================================================================================%s\n\n", ColorYellow, ColorReset)
+		}
+
+		fmt.Printf("%s[SERVER]%s Starting Zero-Dependency Remote Cache Server on %s:%d...\n", ColorGreen, ColorReset, *host, *port)
+		srv := NewRemoteCacheServerWithHost(*host, *port, *storageDir, *token, *allowUnauth)
 		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "%sServer error:%s %v\n", ColorRed, ColorReset, err)
 			os.Exit(1)
@@ -2728,6 +2783,401 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "verify":
+		fs := flag.NewFlagSet("verify", flag.ExitOnError)
+		configPath := fs.String("config", "", "Path to config file")
+		runs := fs.Int("runs", 2, "Number of repeated runs to audit")
+		jsonOut := fs.Bool("json", false, "Emit JSON verification report")
+		fs.Parse(args)
+
+		origWd, _ := os.Getwd()
+		rootDir, resolvedConfig, err := FindConfigRoot(origWd, *configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sError:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+		_ = os.Chdir(rootDir)
+
+		cfg, err := LoadConfig(resolvedConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sError:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+
+		targetTasks := fs.Args()
+		if len(targetTasks) == 0 && cfg.DefaultTask != "" {
+			targetTasks = []string{cfg.DefaultTask}
+		}
+		if len(targetTasks) == 0 {
+			fmt.Fprintf(os.Stderr, "%sError:%s No task specified to verify.\n", ColorRed, ColorReset)
+			os.Exit(1)
+		}
+
+		auditor := verify.NewAuditor(rootDir)
+		hasFailures := false
+
+		for _, taskName := range targetTasks {
+			task, exists := cfg.Tasks[taskName]
+			if !exists {
+				fmt.Fprintf(os.Stderr, "%sError:%s Task '%s' not found.\n", ColorRed, ColorReset, taskName)
+				os.Exit(1)
+			}
+
+			spec := verify.TaskSpec{
+				Name:    taskName,
+				Command: task.Command,
+				Outputs: task.Outputs,
+				Cwd:     task.Cwd,
+				Shell:   task.Shell,
+				Env:     task.EnvVars,
+			}
+
+			report, err := auditor.AuditTask(ctx, spec, *runs)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sAudit error on '%s':%s %v\n", ColorRed, ColorReset, taskName, err)
+				os.Exit(1)
+			}
+
+			if !report.IsDeterministic {
+				hasFailures = true
+			}
+
+			if *jsonOut {
+				data, _ := json.MarshalIndent(report, "", "  ")
+				fmt.Println(string(data))
+			} else {
+				fmt.Println(verify.FormatTerminalReport(report, isTerminal()))
+			}
+		}
+
+		if hasFailures {
+			os.Exit(1)
+		}
+
+	case "capsule":
+		if len(args) == 0 {
+			fmt.Println("Usage: zephyr capsule <create|inspect|verify|replay> [options...]")
+			os.Exit(1)
+		}
+		subCmd := args[0]
+		subArgs := args[1:]
+
+		switch subCmd {
+		case "keygen":
+			fs := flag.NewFlagSet("capsule keygen", flag.ExitOnError)
+			outDir := fs.String("out-dir", ".", "Output directory for keypair files")
+			fs.Parse(subArgs)
+
+			pub, priv, err := capsule.GenerateKeypair()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sError generating keypair:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			privPath := filepath.Join(*outDir, "zephyr.key")
+			pubPath := filepath.Join(*outDir, "zephyr.pub")
+			if err := capsule.SaveKeypair(privPath, pubPath, priv, pub); err != nil {
+				fmt.Fprintf(os.Stderr, "%sError saving keypair:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s[KEYGEN]%s Generated Ed25519 signing keypair:\n", ColorGreen, ColorReset)
+			fmt.Printf("  • Private Signing Key:     %s (KEEP SECRET)\n", privPath)
+			fmt.Printf("  • Public Verification Key: %s\n", pubPath)
+
+		case "create":
+			fs := flag.NewFlagSet("capsule create", flag.ExitOnError)
+			configPath := fs.String("config", "", "Path to config file")
+			output := fs.String("out", "", "Output path for .zcap archive")
+			keyPath := fs.String("key", "", "Path to Ed25519 private key for signing (.key)")
+			fs.Parse(subArgs)
+
+			origWd, _ := os.Getwd()
+			rootDir, resolvedConfig, err := FindConfigRoot(origWd, *configPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sError:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			_ = os.Chdir(rootDir)
+
+			cfg, err := LoadConfig(resolvedConfig)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sError:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			targets := fs.Args()
+			taskName := cfg.DefaultTask
+			if len(targets) > 0 {
+				taskName = targets[0]
+			}
+			task, exists := cfg.Tasks[taskName]
+			if !exists {
+				fmt.Fprintf(os.Stderr, "%sError:%s Task '%s' not found.\n", ColorRed, ColorReset, taskName)
+				os.Exit(1)
+			}
+
+			outPath := *output
+			if outPath == "" {
+				outPath = filepath.Join(".taskcache", "capsules", fmt.Sprintf("%s.zcap", taskName))
+			}
+
+			cManifest := capsule.Manifest{
+				BuildID:    fmt.Sprintf("bld-%d", time.Now().UnixNano()),
+				TaskName:   taskName,
+				Command:    task.Command,
+				Cwd:        task.Cwd,
+				Timestamp:  time.Now().UTC(),
+				ExitCode:   0,
+				InputHashes: make(map[string]string),
+				EnvVars:    make(map[string]string),
+			}
+
+			for _, e := range task.EnvVars {
+				cManifest.EnvVars[e] = os.Getenv(e)
+			}
+
+			if *keyPath != "" {
+				privKey, err := capsule.LoadPrivateKey(*keyPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "%sError loading signing key '%s':%s %v\n", ColorRed, ColorReset, *keyPath, err)
+					os.Exit(1)
+				}
+				if err := capsule.CreateSigned(outPath, cManifest, rootDir, task.Outputs, privKey); err != nil {
+					fmt.Fprintf(os.Stderr, "%sError creating signed capsule:%s %v\n", ColorRed, ColorReset, err)
+					os.Exit(1)
+				}
+				fmt.Printf("%s[CAPSULE]%s Created Ed25519-Signed Build Capsule '%s' for task '%s'.\n", ColorGreen, ColorReset, outPath, taskName)
+			} else {
+				if err := capsule.Create(outPath, cManifest, rootDir, task.Outputs); err != nil {
+					fmt.Fprintf(os.Stderr, "%sError creating capsule:%s %v\n", ColorRed, ColorReset, err)
+					os.Exit(1)
+				}
+				fmt.Printf("%s[CAPSULE]%s Created Build Capsule '%s' for task '%s'.\n", ColorGreen, ColorReset, outPath, taskName)
+			}
+
+		case "inspect":
+			if len(subArgs) == 0 {
+				fmt.Println("Usage: zephyr capsule inspect <file.zcap>")
+				os.Exit(1)
+			}
+			m, err := capsule.Inspect(subArgs[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sError inspecting capsule:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			data, _ := json.MarshalIndent(m, "", "  ")
+			fmt.Println(string(data))
+
+		case "verify":
+			fs := flag.NewFlagSet("capsule verify", flag.ExitOnError)
+			keyPath := fs.String("key", "", "Path to trusted Ed25519 public key (.pub)")
+			fs.Parse(subArgs)
+
+			if len(fs.Args()) == 0 {
+				fmt.Println("Usage: zephyr capsule verify <file.zcap> [--key <zephyr.pub>]")
+				os.Exit(1)
+			}
+			targetCapsule := fs.Args()[0]
+
+			var pubKey []byte
+			if *keyPath != "" {
+				k, err := capsule.LoadPublicKey(*keyPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "%sError loading public key '%s':%s %v\n", ColorRed, ColorReset, *keyPath, err)
+					os.Exit(1)
+				}
+				pubKey = k
+			}
+
+			res, err := capsule.VerifyWithKey(targetCapsule, pubKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sError verifying capsule:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			if res.Valid {
+				sigStatus := "Unsigned (Integrity Only)"
+				if res.SignatureVerified {
+					sigStatus = fmt.Sprintf("Ed25519 Authenticated (Signer: %s...)", res.SignerPubKey[:16])
+				}
+				fmt.Printf("%s[CAPSULE VERIFY]%s PASS: All %d bundled artifacts match recorded SHA-256 checksums.\n", ColorGreen, ColorReset, res.ArtifactCount)
+				fmt.Printf("  • Signature Authenticity: %s\n", sigStatus)
+			} else {
+				fmt.Printf("%s[CAPSULE VERIFY]%s FAIL: Verification failed!\n", ColorRed, ColorReset)
+				for _, e := range res.Errors {
+					fmt.Printf("  • %s\n", e)
+				}
+				os.Exit(1)
+			}
+
+		case "replay":
+			fs := flag.NewFlagSet("capsule replay", flag.ExitOnError)
+			outDir := fs.String("out-dir", ".", "Destination directory to restore artifacts")
+			fs.Parse(subArgs)
+
+			if len(fs.Args()) == 0 {
+				fmt.Println("Usage: zephyr capsule replay <file.zcap> [--out-dir <dir>]")
+				os.Exit(1)
+			}
+			rRes, err := capsule.Replay(fs.Args()[0], *outDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sError replaying capsule:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s[CAPSULE REPLAY]%s Restored %d artifacts in %v (Match: %v).\n", ColorGreen, ColorReset, len(rRes.RestoredFiles), rRes.Duration, rRes.VerifiedMatch)
+			for _, f := range rRes.RestoredFiles {
+				fmt.Printf("  ✓ %s\n", f)
+			}
+
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown capsule command '%s'. Run 'zephyr capsule' for usage.\n", subCmd)
+			os.Exit(1)
+		}
+
+	case "adopt":
+		fs := flag.NewFlagSet("adopt", flag.ExitOnError)
+		writeConfig := fs.Bool("write", false, "Write discovered configuration to tasks.json")
+		force := fs.Bool("force", false, "Overwrite existing configuration file without prompting")
+		jsonOut := fs.Bool("json", false, "Emit machine-readable JSON")
+		fs.Parse(args)
+
+		origWd, _ := os.Getwd()
+		proj, err := adopt.AutoDiscover(origWd)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sError during adoption:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+
+		if *jsonOut {
+			cfgBytes, _ := proj.RenderProposedConfig()
+			fmt.Println(string(cfgBytes))
+			return
+		}
+
+		fmt.Printf("%s[ADOPT]%s Discovered %s project at '%s'.\n\n", ColorGreen, ColorReset, proj.ProjectType, proj.Root)
+		fmt.Printf("Discovered Tasks:\n")
+		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+		fmt.Fprintln(w, "Task Name\tCommand\tInputs\tOutputs\tDepends On")
+		fmt.Fprintln(w, "---------\t-------\t------\t-------\t----------")
+		for name, t := range proj.Tasks {
+			inputs := strings.Join(t.Inputs, ", ")
+			outputs := strings.Join(t.Outputs, ", ")
+			if outputs == "" {
+				outputs = "-"
+			}
+			deps := strings.Join(t.DependsOn, ", ")
+			if deps == "" {
+				deps = "-"
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, t.Command, inputs, outputs, deps)
+		}
+		w.Flush()
+		fmt.Println()
+
+		if *writeConfig {
+			targetPath := filepath.Join(origWd, DefaultConfig)
+			if _, err := os.Stat(targetPath); err == nil && !*force {
+				fmt.Fprintf(os.Stderr, "%sSafety Protection:%s Configuration file '%s' already exists.\nTo safely overwrite, specify: %szephyr adopt --write --force%s\n", ColorRed, ColorReset, targetPath, ColorBold, ColorReset)
+				os.Exit(1)
+			}
+
+			cfgBytes, _ := proj.RenderProposedConfig()
+			if err := os.WriteFile(targetPath, cfgBytes, 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "%sError writing '%s':%s %v\n", ColorRed, ColorReset, targetPath, err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s[ADOPT]%s Successfully wrote proposed configuration to '%s'.\n", ColorGreen, ColorReset, targetPath)
+		} else {
+			fmt.Printf("Tip: Run %szephyr adopt --write%s to generate tasks.json automatically.\n", ColorBold, ColorReset)
+		}
+
+	case "agent":
+		if len(args) == 0 {
+			fmt.Println("Usage: zephyr agent <graph|affected|verify|run> [options...]")
+			os.Exit(1)
+		}
+		subCmd := args[0]
+		subArgs := args[1:]
+
+		origWd, _ := os.Getwd()
+		_, resolvedConfig, err := FindConfigRoot(origWd, "")
+		var tasksMap = make(map[string]agent.GraphNode)
+		if err == nil {
+			if cfg, err := LoadConfig(resolvedConfig); err == nil {
+				for k, v := range cfg.Tasks {
+					tasksMap[k] = agent.GraphNode{
+						Name:      k,
+						Command:   v.Command,
+						Inputs:    v.Inputs,
+						Outputs:   v.Outputs,
+						DependsOn: v.DependsOn,
+						Timeout:   v.Timeout,
+					}
+				}
+			}
+		}
+
+		agentSvc := agent.NewService(origWd, tasksMap)
+
+		switch subCmd {
+		case "graph":
+			g := agentSvc.InspectGraph()
+			fmt.Println(agent.FormatJSON("graph", g, nil))
+
+		case "affected":
+			fs := flag.NewFlagSet("agent affected", flag.ExitOnError)
+			filesFlag := fs.String("files", "", "Comma-separated list of modified file paths")
+			fs.Parse(subArgs)
+
+			var files []string
+			if *filesFlag != "" {
+				for _, f := range strings.Split(*filesFlag, ",") {
+					files = append(files, strings.TrimSpace(f))
+				}
+			}
+			aff := agentSvc.AnalyzeAffected(files)
+			fmt.Println(agent.FormatJSON("affected", aff, nil))
+
+		case "verify":
+			if len(subArgs) == 0 {
+				fmt.Println(agent.FormatJSON("verify", nil, fmt.Errorf("task name required")))
+				os.Exit(1)
+			}
+			vRep, err := agentSvc.VerifyTask(ctx, subArgs[0])
+			fmt.Println(agent.FormatJSON("verify", vRep, err))
+			if err != nil || !vRep.IsDeterministic {
+				os.Exit(1)
+			}
+
+		case "run":
+			fs := flag.NewFlagSet("agent run", flag.ExitOnError)
+			allowExec := fs.Bool("allow-exec", false, "Explicit permission grant to execute process")
+			fs.Parse(subArgs)
+
+			if len(fs.Args()) == 0 {
+				fmt.Println(agent.FormatJSON("run", nil, fmt.Errorf("task name required")))
+				os.Exit(1)
+			}
+			taskName := fs.Args()[0]
+			res, err := agentSvc.ExecuteTask(ctx, taskName, *allowExec)
+			fmt.Println(agent.FormatJSON("run", res, err))
+			if err != nil || res.Status == "PERMISSION_DENIED" || res.ExitCode != 0 {
+				os.Exit(1)
+			}
+
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown agent subcommand '%s'. Run 'zephyr agent' for usage.\n", subCmd)
+			os.Exit(1)
+		}
+
+	case "bench":
+		origWd, _ := os.Getwd()
+		runner := bench.NewRunner(origWd)
+		report, err := runner.RunBenchmark(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sBenchmark error:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+		fmt.Println(bench.FormatTerminalReport(report))
+
 	case "version", "--version", "-v":
 		fmt.Printf("%s (%s/%s, 100%% Go stdlib by %s)\n", ProjectName, runtime.GOOS, runtime.GOARCH, Author)
 
@@ -2735,7 +3185,7 @@ func main() {
 		printUsage()
 
 	default:
-		suggestions := SuggestSimilarTask(cmd, []string{"run", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
+		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "bench", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
 		fmt.Fprintf(os.Stderr, "%sUnknown command '%s'.%s", ColorRed, cmd, ColorReset)
 		if len(suggestions) > 0 {
 			fmt.Fprintf(os.Stderr, " Did you mean: '%s'?", strings.Join(suggestions, "', '"))

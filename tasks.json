@@ -15,6 +15,13 @@
       "env_vars": ["GOOS", "GOARCH", "APP_ENV"],
       "timeout": "2m"
     },
+    "repro-build": {
+      "command": "go build -trimpath -ldflags=-buildid= -o bin/taskrunner-demo.exe main.go",
+      "inputs": ["main.go", "go.mod"],
+      "outputs": ["bin/taskrunner-demo.exe"],
+      "depends_on": ["lint"],
+      "timeout": "2m"
+    },
     "test:unit": {
       "command": "go test -v -run TestDAG ./...",
       "inputs": ["**/*.go"],
