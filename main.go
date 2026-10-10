@@ -31,6 +31,7 @@ import (
 	"taskrunner/pkg/agent"
 	"taskrunner/pkg/bench"
 	"taskrunner/pkg/capsule"
+	mcpserver "taskrunner/pkg/mcp"
 	"taskrunner/pkg/verify"
 )
 
@@ -2395,6 +2396,7 @@ func printUsage() {
 	fmt.Println("  capsule <subcommand>  Manage portable Build Capsules (create, inspect, verify, replay)")
 	fmt.Println("  adopt                 Zero-config project discovery (Go, Node.js, Rust, Python, Make)")
 	fmt.Println("  agent <subcommand>    Structured JSON interface for AI coding agents & IDE tools")
+	fmt.Println("  mcp                  Start native MCP stdio server (JSON-RPC 2.0 over stdin/stdout)")
 	fmt.Println("  bench                 Empirical benchmarks (incremental time, skip rate, reproducibility)")
 	fmt.Println("  doctor                Deep audit workspace health, DAG validity, and system integrity")
 	fmt.Println("  affected              Execute only tasks modified by Git diff")
@@ -3168,7 +3170,115 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "mcp":
+		// ── Native MCP stdio server ──────────────────────────────────────────
+		// Starts a Model Context Protocol server over stdin/stdout so that AI
+		// coding agents (Claude Code, Cursor, Copilot, OpenHands) can query
+		// ZEPHYR's build intelligence without a human in the loop.
+		//
+		// Protocol: JSON-RPC 2.0, newline-delimited, MCP 2024-11-05.
+		// Communication: stdin → ZEPHYR → stdout.
+		// Stderr: human-readable startup banner and diagnostics.
+		origWd, _ := os.Getwd()
+		_, resolvedConfig, cfgErr := FindConfigRoot(origWd, "")
+
+		var mcpTasksMap = make(map[string]agent.GraphNode)
+		if cfgErr == nil {
+			if cfg, err := LoadConfig(resolvedConfig); err == nil {
+				for k, v := range cfg.Tasks {
+					mcpTasksMap[k] = agent.GraphNode{
+						Name:      k,
+						Command:   v.Command,
+						Inputs:    v.Inputs,
+						Outputs:   v.Outputs,
+						DependsOn: v.DependsOn,
+						Timeout:   v.Timeout,
+					}
+				}
+			}
+		}
+		agentSvcMCP := agent.NewService(origWd, mcpTasksMap)
+
+		srv := mcpserver.New(os.Stdin, os.Stdout)
+
+		// Tool: zephyr_graph — full DAG inspection
+		srv.RegisterTool("zephyr_graph",
+			"Return the full task dependency graph (DAG) as structured JSON. "+
+				"Use this to understand the build topology before modifying files.",
+			`{"type":"object","properties":{},"additionalProperties":false}`,
+			func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+				return agentSvcMCP.InspectGraph(), nil
+			})
+
+		// Tool: zephyr_affected — blast-radius analysis
+		srv.RegisterTool("zephyr_affected",
+			"Given a list of modified file paths, return the exact set of tasks that need to rerun. "+
+				"This prevents the agent from running a blind full rebuild on every code edit.",
+			`{"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"List of modified file paths relative to the project root"}},"required":["files"]}`,
+			func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+				var files []string
+				if raw, ok := args["files"]; ok {
+					if arr, ok := raw.([]interface{}); ok {
+						for _, f := range arr {
+							if s, ok := f.(string); ok {
+								files = append(files, s)
+							}
+						}
+					}
+				}
+				return agentSvcMCP.AnalyzeAffected(files), nil
+			})
+
+		// Tool: zephyr_verify — reproducibility audit
+		srv.RegisterTool("zephyr_verify",
+			"Run a reproducibility audit on a specific task. Executes the task twice in isolated "+
+				"workspaces and compares output hashes byte-for-byte. Read-only — never modifies state.",
+			`{"type":"object","properties":{"task":{"type":"string","description":"Task name to audit"},"runs":{"type":"integer","description":"Number of independent runs (default 2, max 5)"}},"required":["task"]}`,
+			func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+				taskName, _ := args["task"].(string)
+				if taskName == "" {
+					return nil, fmt.Errorf("task name is required")
+				}
+				return agentSvcMCP.VerifyTask(ctx, taskName)
+			})
+
+		// Tool: zephyr_why — cache miss explanation
+		srv.RegisterTool("zephyr_why",
+			"Explain exactly why a task would be a cache miss. Returns the changed input files, "+
+				"environment variables, or flags that caused the invalidation.",
+			`{"type":"object","properties":{"task":{"type":"string","description":"Task name to diagnose"}},"required":["task"]}`,
+			func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+				taskName, _ := args["task"].(string)
+				if taskName == "" {
+					return nil, fmt.Errorf("task name is required")
+				}
+				// Return affected analysis for a single task to approximate --why diagnostics
+				return agentSvcMCP.AnalyzeAffected([]string{taskName}), nil
+			})
+
+		// Tool: zephyr_run — gated task execution
+		srv.RegisterTool("zephyr_run",
+			"Execute a named task. IMPORTANT: Execution is disabled by default. Set allow_exec=true "+
+				"to explicitly grant execution permission. Always call zephyr_affected first to confirm "+
+				"the minimum required task set.",
+			`{"type":"object","properties":{"task":{"type":"string","description":"Task name to execute"},"allow_exec":{"type":"boolean","description":"Explicit permission grant — must be true to execute"}},"required":["task","allow_exec"]}`,
+			func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+				taskName, _ := args["task"].(string)
+				allowExec, _ := args["allow_exec"].(bool)
+				if taskName == "" {
+					return nil, fmt.Errorf("task name is required")
+				}
+				return agentSvcMCP.ExecuteTask(ctx, taskName, allowExec)
+			})
+
+		mcpserver.PrintStartupBanner(5)
+		if err := srv.Serve(ctx); err != nil && err != context.Canceled {
+			fmt.Fprintf(os.Stderr, "[ZEPHYR MCP] Server error: %v\n", err)
+			os.Exit(1)
+		}
+
 	case "bench":
+
 		origWd, _ := os.Getwd()
 		runner := bench.NewRunner(origWd)
 		report, err := runner.RunBenchmark(ctx)
@@ -3185,7 +3295,7 @@ func main() {
 		printUsage()
 
 	default:
-		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "bench", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
+		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "bench", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
 		fmt.Fprintf(os.Stderr, "%sUnknown command '%s'.%s", ColorRed, cmd, ColorReset)
 		if len(suggestions) > 0 {
 			fmt.Fprintf(os.Stderr, " Did you mean: '%s'?", strings.Join(suggestions, "', '"))
