@@ -1,5 +1,5 @@
-# ZEPHYR 2.0 - One-Command Judge Verification Script
-# Reproduces key results from the demo in under 90 seconds.
+# ZEPHYR 2.0 - System Verification Suite
+# Verifies all architectural claims, zero dependencies, determinism, and test coverage.
 # Run: powershell -ExecutionPolicy Bypass -File .\verify.ps1
 
 $ErrorActionPreference = "Stop"
@@ -22,8 +22,8 @@ function Run-Check([string]$label, [scriptblock]$action) {
 }
 
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "          ZEPHYR 2.0 - Judge Verification Suite                " -ForegroundColor Cyan
-Write-Host "          Empirical Reproducibility & Security Audit           " -ForegroundColor Cyan
+Write-Host "          ZEPHYR 2.0 - System Verification Suite                " -ForegroundColor Cyan
+Write-Host "          Empirical Reproducibility & Architecture Audit       " -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 
 if (-not (Test-Path "go.mod")) {

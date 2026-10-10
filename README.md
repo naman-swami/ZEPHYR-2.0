@@ -30,13 +30,13 @@
 
 ## 1. Quickstart: 60 Seconds to Velocity
 
-> **🏆 For Hackathon Judges & Evaluators:** Run `.\verify.ps1` in PowerShell to automatically verify zero external dependencies, byte-identical reproducibility, test suites, capsule cryptography, and agent interfaces in under 90 seconds.
+> **⚡ Automated Verification:** Run `.\verify.ps1` in PowerShell to automatically audit zero external dependencies, byte-identical reproducibility, test suites, capsule cryptography, and agent interfaces in under 90 seconds.
 
 ### Step 1: Clone and Build in 1 Step
 ```bash
 # Clone the repository
-git clone https://github.com/naman-swami/ZEPHYR.git
-cd ZEPHYR
+git clone https://github.com/naman-swami/ZEPHYR-2.0.git
+cd ZEPHYR-2.0
 
 # Build the standalone binary (Zero external dependencies required)
 go build -o zephyr.exe .
@@ -334,6 +334,5 @@ Both outputs yield byte-for-byte identical SHA-256 digests.
 ## 12. Author & License
 
 - **Creator:** Naman Swami
-- **Project:** ZEPHYR 2.0
-- **Hackathon:** EurekaDev 2026 (Devpost)
+- **Project:** ZEPHYR 2.0 (Local-First Build Intelligence Engine)
 - **License:** MIT License
