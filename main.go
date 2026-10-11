@@ -203,6 +203,20 @@ func FindConfigRoot(startDir, explicitConfig string) (string, string, error) {
 			}
 			return "", "", fmt.Errorf("config file '%s' not found", explicitConfig)
 		}
+
+		// Relative path check: if explicitConfig exists relative to startDir, resolve directly
+		relCandidate := filepath.Join(startDir, explicitConfig)
+		if _, err := os.Stat(relCandidate); err == nil {
+			absPath, _ := filepath.Abs(relCandidate)
+			return filepath.Dir(absPath), absPath, nil
+		}
+
+		// Also check relative to current working directory if different from startDir
+		if _, err := os.Stat(explicitConfig); err == nil {
+			absPath, _ := filepath.Abs(explicitConfig)
+			return filepath.Dir(absPath), absPath, nil
+		}
+
 		targetFilename = filepath.Base(explicitConfig)
 	}
 
@@ -717,6 +731,16 @@ var ignoredDirs = map[string]bool{
 	".svn":         true,
 }
 
+func patternMentionsDir(pattern, dir string) bool {
+	clean := filepath.ToSlash(pattern)
+	for _, part := range strings.Split(clean, "/") {
+		if part == dir {
+			return true
+		}
+	}
+	return false
+}
+
 func MatchGlobPatterns(patterns []string) ([]string, error) {
 	var matchedFiles []string
 	seen := make(map[string]bool)
@@ -747,7 +771,10 @@ func MatchGlobPatterns(patterns []string) ([]string, error) {
 			if d.IsDir() {
 				if path != "." {
 					if ignoredDirs[baseName] {
-						return filepath.SkipDir
+						// Prune directory unless the search pattern explicitly traverses or targets it (e.g. "dist/*", "build/**")
+						if !patternMentionsDir(pattern, baseName) {
+							return filepath.SkipDir
+						}
 					}
 					// Avoid cyclic symlink infinite loops
 					absDir, _ := filepath.Abs(path)
@@ -1451,7 +1478,7 @@ func ExecuteTask(
 			if why && whyReason != "" {
 				whyMsg = fmt.Sprintf(" %s[Why: %s]%s", ColorYellow, whyReason, ColorReset)
 			}
-			logger.Log(fmt.Sprintf("%s[%s]%s %s[RUNNING]%s \"%s\" (Hash: %s)%s", ColorGreen, task.Name, ColorReset, ColorGreen, ColorReset, task.Command, truncateHash(taskHash), whyMsg))
+			logger.Log(fmt.Sprintf("%s[%s]%s %s[RUNNING]%s \"%s\" (Hash: %s)%s", ColorGreen, task.Name, ColorReset, ColorGreen, ColorReset, RedactSecrets(task.Command), truncateHash(taskHash), whyMsg))
 		}
 
 		var cmdCtx context.Context
@@ -1495,6 +1522,22 @@ func ExecuteTask(
 			}
 		}
 
+		// Windows Process Tree Termination & Orphan Pipe Prevention:
+		// On Windows, killing cmd.exe does not kill spawned child processes, which can
+		// hold stdout/stderr pipe handles open and cause cmd.Wait() to hang.
+		// Attach cmd.Cancel to terminate the full process tree using taskkill /F /T,
+		// and configure cmd.WaitDelay to bound pipe close time on cancelled processes.
+		if runtime.GOOS == "windows" {
+			cmd.Cancel = func() error {
+				if cmd.Process != nil && cmd.Process.Pid > 0 {
+					_ = exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+					return cmd.Process.Kill()
+				}
+				return nil
+			}
+			cmd.WaitDelay = 2 * time.Second
+		}
+
 		if task.Cwd != "" {
 			cmd.Dir = task.Cwd
 		}
@@ -1522,14 +1565,16 @@ func ExecuteTask(
 				defer wg.Done()
 				scanner := bufio.NewScanner(io.TeeReader(stdoutPipe, redactedStdout))
 				for scanner.Scan() {
-					logger.LogPrefixed(task.Name, ColorCyan, scanner.Text())
+					// Redact secrets in real-time before streaming to terminal
+					logger.LogPrefixed(task.Name, ColorCyan, RedactSecrets(scanner.Text()))
 				}
 			}()
 			go func() {
 				defer wg.Done()
 				scanner := bufio.NewScanner(io.TeeReader(stderrPipe, redactedStderr))
 				for scanner.Scan() {
-					logger.LogPrefixed(task.Name, ColorRed, scanner.Text())
+					// Redact secrets in real-time before streaming to terminal
+					logger.LogPrefixed(task.Name, ColorRed, RedactSecrets(scanner.Text()))
 				}
 			}()
 
