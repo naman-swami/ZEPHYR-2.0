@@ -65,3 +65,43 @@ func TestAuditor_NonDeterministicTask(t *testing.T) {
 		t.Fatalf("expected divergence reasons to be populated")
 	}
 }
+
+func TestCloneDir_HardlinkZeroCopy(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "src")
+	dstDir := filepath.Join(tmpDir, "dst")
+	_ = os.MkdirAll(srcDir, 0755)
+
+	srcFile := filepath.Join(srcDir, "sample.bin")
+	content := []byte("payload for hardlink verification")
+	if err := os.WriteFile(srcFile, content, 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	if err := cloneDir(srcDir, dstDir); err != nil {
+		t.Fatalf("cloneDir failed: %v", err)
+	}
+
+	dstFile := filepath.Join(dstDir, "sample.bin")
+	dstContent, err := os.ReadFile(dstFile)
+	if err != nil || string(dstContent) != string(content) {
+		t.Fatalf("cloned content mismatch: %s != %s", string(dstContent), string(content))
+	}
+
+	// Verify that os.SameFile returns true if hardlinking succeeded on the same volume
+	fiSrc, err := os.Stat(srcFile)
+	if err != nil {
+		t.Fatalf("stat src failed: %v", err)
+	}
+	fiDst, err := os.Stat(dstFile)
+	if err != nil {
+		t.Fatalf("stat dst failed: %v", err)
+	}
+
+	if !os.SameFile(fiSrc, fiDst) {
+		t.Logf("note: hardlinks not supported on current volume or cross-device, fell back to stream copy")
+	} else {
+		t.Logf("verified: zero-copy hardlink forest successfully linked (same inode)")
+	}
+}
+

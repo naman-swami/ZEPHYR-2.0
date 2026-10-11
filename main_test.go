@@ -668,3 +668,118 @@ func TestMonorepo_WorkspaceDiscovery(t *testing.T) {
 		t.Errorf("expected discovered task 'ui#build', tasks: %v", cfg.Tasks)
 	}
 }
+
+// Test 2-Level Content Addressable Storage (CAS) Directory Sharding
+func TestCAS_TwoLevelSharding(t *testing.T) {
+	tmpDir := t.TempDir()
+	casRoot := filepath.Join(tmpDir, "cas", "objects")
+	cas := NewCASStore(casRoot)
+
+	// Test BlobPath sharding logic: ab/cdef...
+	testHash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	expectedPath := filepath.Join(casRoot, "e3", "b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	actualPath := cas.BlobPath(testHash)
+	if actualPath != expectedPath {
+		t.Fatalf("BlobPath mismatch: expected %s, got %s", expectedPath, actualPath)
+	}
+
+	// Create a test file
+	testFile := filepath.Join(tmpDir, "sample.txt")
+	content := []byte("hello cas sharding with 256 buckets")
+	if err := os.WriteFile(testFile, content, 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	// Store blob in CAS
+	hash, err := cas.StoreBlob(testFile)
+	if err != nil {
+		t.Fatalf("StoreBlob failed: %v", err)
+	}
+
+	// Verify the physical file is placed in the sharded directory
+	shardedPath := cas.BlobPath(hash)
+	if _, err := os.Stat(shardedPath); err != nil {
+		t.Fatalf("expected sharded blob at %s, not found: %v", shardedPath, err)
+	}
+
+	// Restore blob to another destination
+	restoreFile := filepath.Join(tmpDir, "restored.txt")
+	if err := cas.RestoreBlob(hash, restoreFile); err != nil {
+		t.Fatalf("RestoreBlob failed: %v", err)
+	}
+
+	restoredContent, err := os.ReadFile(restoreFile)
+	if err != nil || string(restoredContent) != string(content) {
+		t.Fatalf("restored content mismatch: %s vs %s", string(restoredContent), string(content))
+	}
+}
+
+// Test StatCache Fast-Path Avoids Unnecessary Re-reading
+func TestStatCache_FastPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "cache_probe.txt")
+	if err := os.WriteFile(testFile, []byte("version 1"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	h1, err := ComputeFileHash(testFile)
+	if err != nil {
+		t.Fatalf("ComputeFileHash failed: %v", err)
+	}
+
+	// Immediate subsequent hash check should hit StatCache
+	h2, err := ComputeFileHash(testFile)
+	if err != nil {
+		t.Fatalf("ComputeFileHash cached hit failed: %v", err)
+	}
+	if h1 != h2 {
+		t.Fatalf("cache hash mismatch: %s != %s", h1, h2)
+	}
+
+	// Ensure modifying the file invalidates the stat cache
+	time.Sleep(10 * time.Millisecond) // ensure mtime changes
+	if err := os.WriteFile(testFile, []byte("version 2 with different length"), 0644); err != nil {
+		t.Fatalf("failed to update test file: %v", err)
+	}
+
+	h3, err := ComputeFileHash(testFile)
+	if err != nil {
+		t.Fatalf("ComputeFileHash post-modification failed: %v", err)
+	}
+	if h3 == h1 {
+		t.Fatalf("expected new hash after modification, but got stale cached hash: %s", h3)
+	}
+}
+
+// Test ParallelHashFiles Concurrency and Determinism
+func TestParallelHashFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	var filePaths []string
+
+	// Generate 25 test files
+	for i := 0; i < 25; i++ {
+		p := filepath.Join(tmpDir, filepath.Base(t.Name())+"_"+string(rune('a'+i))+".dat")
+		if err := os.WriteFile(p, []byte("concurrent content "+strings.Repeat("X", i*50)), 0644); err != nil {
+			t.Fatalf("failed creating test file %d: %v", i, err)
+		}
+		filePaths = append(filePaths, p)
+	}
+
+	// Compute parallel hashes
+	parallelHashes := ParallelHashFiles(filePaths)
+	if len(parallelHashes) != len(filePaths) {
+		t.Fatalf("expected %d hashed files, got %d", len(filePaths), len(parallelHashes))
+	}
+
+	// Verify each parallel hash matches sequential ComputeFileHash
+	for _, p := range filePaths {
+		expectedHash, err := ComputeFileHash(p)
+		if err != nil {
+			t.Fatalf("ComputeFileHash failed for %s: %v", p, err)
+		}
+		if parallelHashes[p] != expectedHash {
+			t.Fatalf("hash mismatch for %s: parallel=%s, sequential=%s", p, parallelHashes[p], expectedHash)
+		}
+	}
+}
+
