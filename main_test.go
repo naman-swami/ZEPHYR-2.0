@@ -783,3 +783,153 @@ func TestParallelHashFiles(t *testing.T) {
 	}
 }
 
+// Test Dynamic Critical Path Method (CPM) Priority Scheduling
+func TestCPM_CriticalPathScheduling(t *testing.T) {
+	// Construct DAG with two parallel branches:
+	// Branch 1: task_quick (Weight: 1 -> 1,000ms), no dependents.
+	// Branch 2: task_heavy_root (Weight: 5 -> 5,000ms) -> task_heavy_child (Weight: 10 -> 10,000ms).
+	// Critical Path of task_heavy_root: 5,000 + 10,000 = 15,000ms.
+	// Critical Path of task_quick: 1,000ms.
+	cfg := &Config{
+		Tasks: map[string]Task{
+			"task_quick": {
+				Name:    "task_quick",
+				Command: "echo quick",
+				Weight:  1,
+			},
+			"task_heavy_root": {
+				Name:    "task_heavy_root",
+				Command: "echo heavy_root",
+				Weight:  5,
+			},
+			"task_heavy_child": {
+				Name:      "task_heavy_child",
+				Command:   "echo heavy_child",
+				Weight:    10,
+				DependsOn: []string{"task_heavy_root"},
+			},
+		},
+	}
+
+	dag, err := BuildDAG(cfg)
+	if err != nil {
+		t.Fatalf("BuildDAG failed: %v", err)
+	}
+
+	levels, err := GetExecutionBatches(dag, nil)
+	if err != nil {
+		t.Fatalf("GetExecutionBatches failed: %v", err)
+	}
+
+	if len(levels) != 2 {
+		t.Fatalf("expected 2 levels, got %d", len(levels))
+	}
+
+	// In Batch 1, both task_quick and task_heavy_root have inDegree == 0.
+	// Critical Path Scheduling must place task_heavy_root first (CP: 15,000ms > 1,000ms)!
+	batch1 := levels[0]
+	if len(batch1) != 2 {
+		t.Fatalf("expected 2 tasks in batch 1, got %d: %v", len(batch1), batch1)
+	}
+
+	if batch1[0] != "task_heavy_root" {
+		t.Fatalf("expected task_heavy_root to be scheduled first due to higher Critical Path, got: %s", batch1[0])
+	}
+	if batch1[1] != "task_quick" {
+		t.Fatalf("expected task_quick to be scheduled second, got: %s", batch1[1])
+	}
+}
+
+// Test Speculative Early Cutoff (Hash-Invariant Pruning)
+func TestSpeculativeEarlyCutoff(t *testing.T) {
+	origDir, _ := os.Getwd()
+	tmpDir := t.TempDir()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Setup task A (writes output out_a.txt) and task B (depends on A)
+	cfg := &Config{
+		Tasks: map[string]Task{
+			"task_a": {
+				Name:    "task_a",
+				Command: "powershell -Command \"Set-Content out_a.txt 'canonical output'\"",
+				Outputs: []string{"out_a.txt"},
+				Shell:   "powershell",
+			},
+			"task_b": {
+				Name:      "task_b",
+				Command:   "powershell -Command \"Set-Content out_b.txt 'downstream result'\"",
+				Outputs:   []string{"out_b.txt"},
+				DependsOn: []string{"task_a"},
+				Shell:     "powershell",
+			},
+		},
+	}
+
+	ctx := context.Background()
+
+	// Run 1: Cold execution (both A and B execute)
+	summary1, err := RunPipeline(ctx, cfg, []string{"task_b"}, 2, false, false, false, true, false, nil)
+	if err != nil {
+		t.Fatalf("Run 1 failed: %v", err)
+	}
+	if summary1.ExecutedTasks != 2 {
+		t.Fatalf("expected 2 executed tasks in Run 1, got %d", summary1.ExecutedTasks)
+	}
+
+	// Verify out_a.txt was created
+	if _, err := os.Stat("out_a.txt"); err != nil {
+		t.Fatalf("out_a.txt was not created: %v", err)
+	}
+
+	// Run 2: Without any changes, both must be CACHED
+	summary2, err := RunPipeline(ctx, cfg, []string{"task_b"}, 2, false, false, false, true, false, nil)
+	if err != nil {
+		t.Fatalf("Run 2 failed: %v", err)
+	}
+	if summary2.CachedTasks != 2 {
+		t.Fatalf("expected 2 cached tasks in Run 2, got %d", summary2.CachedTasks)
+	}
+
+	// Mutate task_a command slightly (simulating a developer editing comments / whitespace)
+	// BUT ensure task_a still writes the EXACT SAME content ('canonical output') to out_a.txt!
+	cfg.Tasks["task_a"] = Task{
+		Name:    "task_a",
+		Command: "powershell -Command \"# comment edit; Set-Content out_a.txt 'canonical output'\"",
+		Outputs: []string{"out_a.txt"},
+		Shell:   "powershell",
+	}
+
+	// Run 3: Task A has an input cache miss and executes.
+	// Speculative Early Cutoff must detect that out_a.txt is byte-identical to prior build!
+	// Therefore, downstream Task B must remain CACHED without re-executing!
+	summary3, err := RunPipeline(ctx, cfg, []string{"task_b"}, 2, false, false, false, true, false, nil)
+	if err != nil {
+		t.Fatalf("Run 3 failed: %v", err)
+	}
+
+	// Verify task_a was executed and detected Early Cutoff
+	var taskAResult, taskBResult TaskResult
+	for _, r := range summary3.Results {
+		if r.TaskName == "task_a" {
+			taskAResult = r
+		}
+		if r.TaskName == "task_b" {
+			taskBResult = r
+		}
+	}
+
+	if taskAResult.Status != "EXECUTED" {
+		t.Fatalf("expected task_a to be EXECUTED due to command modification, got: %s", taskAResult.Status)
+	}
+	if !taskAResult.EarlyCutoff {
+		t.Fatalf("expected task_a to have EarlyCutoff=true, got false")
+	}
+
+	// CRITICAL CHECK: Downstream Task B MUST BE CACHED due to early cutoff pruning!
+	if taskBResult.Status != "CACHED" {
+		t.Fatalf("expected downstream task_b to be CACHED via Early Cutoff pruning, but got: %s", taskBResult.Status)
+	}
+}
+
+

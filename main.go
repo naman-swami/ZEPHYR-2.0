@@ -171,6 +171,8 @@ type TaskResult struct {
 	Duration         time.Duration `json:"duration"`
 	OriginalDuration time.Duration `json:"original_duration"`
 	Hash             string        `json:"hash"`
+	OutputDigest     string        `json:"output_digest,omitempty"` // Merkle digest of declared output hashes
+	EarlyCutoff      bool          `json:"early_cutoff,omitempty"`  // True if outputs match prior build despite re-execution
 	ExitCode         int           `json:"exit_code"`
 	Why              string        `json:"why,omitempty"`
 	Error            string        `json:"error,omitempty"`
@@ -183,6 +185,7 @@ type PipelineSummary struct {
 	TotalTasks       int           `json:"total_tasks"`
 	CachedTasks      int           `json:"cached_tasks"`
 	ExecutedTasks    int           `json:"executed_tasks"`
+	EarlyCutoffTasks int           `json:"early_cutoff_tasks"`
 	FailedTasks      int           `json:"failed_tasks"`
 	TotalDuration    time.Duration `json:"total_duration"`
 	SavedComputeTime time.Duration `json:"saved_compute_time"`
@@ -643,6 +646,128 @@ func DetectCycles(dag *DAG) error {
 	return nil
 }
 
+// ============================================================================
+// SECTION 7b: DYNAMIC CRITICAL PATH METHOD (CPM) & HISTORICAL TASK STATS
+// ============================================================================
+
+const StatsFilePath = ".taskcache/stats.json"
+
+type TaskStatRecord struct {
+	LastDurationMs int64 `json:"last_duration_ms"`
+	ExecCount      int   `json:"exec_count"`
+}
+
+type TaskStats struct {
+	mu    sync.RWMutex
+	Tasks map[string]TaskStatRecord `json:"tasks"`
+}
+
+var (
+	globalTaskStats *TaskStats
+	statsOnce       sync.Once
+)
+
+func GetTaskStats() *TaskStats {
+	statsOnce.Do(func() {
+		globalTaskStats = &TaskStats{Tasks: make(map[string]TaskStatRecord)}
+		if data, err := os.ReadFile(StatsFilePath); err == nil {
+			_ = json.Unmarshal(data, &globalTaskStats.Tasks)
+		}
+		if globalTaskStats.Tasks == nil {
+			globalTaskStats.Tasks = make(map[string]TaskStatRecord)
+		}
+	})
+	return globalTaskStats
+}
+
+func (ts *TaskStats) Save() {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	_ = os.MkdirAll(filepath.Dir(StatsFilePath), 0755)
+	if data, err := json.MarshalIndent(ts.Tasks, "", "  "); err == nil {
+		_ = os.WriteFile(StatsFilePath, data, 0644)
+	}
+}
+
+func (ts *TaskStats) Record(taskName string, dur time.Duration) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	rec := ts.Tasks[taskName]
+	rec.LastDurationMs = dur.Milliseconds()
+	rec.ExecCount++
+	ts.Tasks[taskName] = rec
+}
+
+// ComputeCriticalPaths computes the Critical Path length (in milliseconds)
+// for each task in the DAG. The Critical Path of task T is its expected duration
+// plus the maximum Critical Path of any of its downstream dependents:
+//   CP(T) = Duration(T) + max_{D in Dependents(T)} CP(D)
+// Tasks with higher CP values bound the overall pipeline makespan and are
+// dispatched first within each execution batch to minimize wall-clock duration.
+func ComputeCriticalPaths(dag *DAG, needed map[string]bool, stats *TaskStats) map[string]int64 {
+	cpMap := make(map[string]int64)
+	var getCP func(name string) int64
+	getCP = func(name string) int64 {
+		if val, ok := cpMap[name]; ok {
+			return val
+		}
+		node, ok := dag.Nodes[name]
+		if !ok {
+			return 0
+		}
+		var dur int64 = 100 // default baseline: 100ms
+		if stats != nil {
+			stats.mu.RLock()
+			rec, exists := stats.Tasks[name]
+			stats.mu.RUnlock()
+			if exists && rec.LastDurationMs > 0 {
+				dur = rec.LastDurationMs
+			} else if node.Task.Weight > 0 {
+				dur = int64(node.Task.Weight * 1000)
+			}
+		} else if node.Task.Weight > 0 {
+			dur = int64(node.Task.Weight * 1000)
+		}
+
+		var maxChild int64 = 0
+		for _, dep := range node.Dependents {
+			if needed[dep.Task.Name] {
+				childCP := getCP(dep.Task.Name)
+				if childCP > maxChild {
+					maxChild = childCP
+				}
+			}
+		}
+		total := dur + maxChild
+		cpMap[name] = total
+		return total
+	}
+
+	for name := range needed {
+		getCP(name)
+	}
+	return cpMap
+}
+
+// ComputeOutputDigest computes a deterministic Merkle root SHA-256 hex digest
+// over all declared output artifact hashes. Used by Speculative Early Cutoff
+// to determine if a rebuilt task produced bit-identical outputs.
+func ComputeOutputDigest(outputHashes map[string]string) string {
+	if len(outputHashes) == 0 {
+		return ""
+	}
+	var keys []string
+	for k := range outputHashes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	for _, k := range keys {
+		h.Write([]byte(fmt.Sprintf("%s:%s\n", k, outputHashes[k])))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func GetExecutionBatches(dag *DAG, targetTasks []string) ([][]string, error) {
 	needed := make(map[string]bool)
 
@@ -671,6 +796,10 @@ func GetExecutionBatches(dag *DAG, targetTasks []string) ([][]string, error) {
 		}
 	}
 
+	// Compute Critical Path lengths for all needed tasks using historical timing stats
+	stats := GetTaskStats()
+	cpMap := ComputeCriticalPaths(dag, needed, stats)
+
 	inDegree := make(map[string]int)
 	for name := range needed {
 		count := 0
@@ -695,7 +824,17 @@ func GetExecutionBatches(dag *DAG, targetTasks []string) ([][]string, error) {
 			break
 		}
 
-		sort.Strings(currentLevel)
+		// Critical Path Scheduling: sort tasks in descending order of CP value.
+		// Tasks on the critical path run first to ensure dependent chains start immediately.
+		// Alphabetical sort is used as a deterministic tie-breaker.
+		sort.SliceStable(currentLevel, func(i, j int) bool {
+			cpI := cpMap[currentLevel[i]]
+			cpJ := cpMap[currentLevel[j]]
+			if cpI != cpJ {
+				return cpI > cpJ
+			}
+			return currentLevel[i] < currentLevel[j]
+		})
 		levels = append(levels, currentLevel)
 
 		for _, name := range currentLevel {
@@ -1434,6 +1573,7 @@ func ExecuteTask(
 					Duration:         time.Millisecond,
 					OriginalDuration: time.Duration(entry.OriginalDurationMs) * time.Millisecond,
 					Hash:             taskHash,
+					OutputDigest:     ComputeOutputDigest(entry.OutputHashes),
 					ExitCode:         entry.ExitCode,
 					Stdout:           entry.Stdout,
 					Stderr:           entry.Stderr,
@@ -1662,7 +1802,47 @@ func ExecuteTask(
 			}
 			provJSON, _ := GenerateProvenance(task, inputHashes, outputHashes, startTime, time.Now(), taskHash)
 
-			logger.Log(fmt.Sprintf("%s[%s]%s %s[DONE]%s in %v", ColorGreen, task.Name, ColorReset, ColorGreen, ColorReset, duration.Round(time.Millisecond)))
+			outputDigest := ComputeOutputDigest(outputHashes)
+
+			// Speculative Early Cutoff check:
+			// If previous build produced identical output artifacts despite a cache miss/re-execution,
+			// mark EarlyCutoff=true so downstream tasks that consume these outputs can remain CACHED.
+			manifestPath := filepath.Join(CacheDir, task.Name+".manifest.json")
+			earlyCutoff := false
+			if prevData, err := os.ReadFile(manifestPath); err == nil {
+				var prev TaskManifest
+				if json.Unmarshal(prevData, &prev) == nil && len(outputHashes) > 0 && len(prev.OutputHashes) == len(outputHashes) {
+					matches := true
+					for file, h := range outputHashes {
+						if prevH, ok := prev.OutputHashes[file]; !ok || prevH != h {
+							matches = false
+							break
+						}
+					}
+					if matches {
+						earlyCutoff = true
+					}
+				}
+			}
+
+			// Save TaskManifest for continuous Early Cutoff detection and --why diagnostics
+			currManifest := TaskManifest{
+				TaskName:     task.Name,
+				Command:      task.Command,
+				Hash:         taskHash,
+				FileHashes:   inputHashes,
+				OutputHashes: outputHashes,
+				Timestamp:    time.Now(),
+			}
+			if mData, err := json.MarshalIndent(currManifest, "", "  "); err == nil {
+				_ = os.WriteFile(manifestPath, mData, 0644)
+			}
+
+			if earlyCutoff {
+				logger.Log(fmt.Sprintf("%s[%s]%s %s[EARLY CUTOFF]%s Outputs byte-identical to prior build in %v (pruning downstream rebuilds)", ColorGreen, task.Name, ColorReset, ColorMagenta, ColorReset, duration.Round(time.Millisecond)))
+			} else {
+				logger.Log(fmt.Sprintf("%s[%s]%s %s[DONE]%s in %v", ColorGreen, task.Name, ColorReset, ColorGreen, ColorReset, duration.Round(time.Millisecond)))
+			}
 
 			return TaskResult{
 				TaskName:         task.Name,
@@ -1670,6 +1850,8 @@ func ExecuteTask(
 				Duration:         duration,
 				OriginalDuration: duration,
 				Hash:             taskHash,
+				OutputDigest:     outputDigest,
+				EarlyCutoff:      earlyCutoff,
 				ExitCode:         exitCode,
 				Why:              whyReason,
 				Stdout:           stdoutBuf.String(),
@@ -1751,8 +1933,10 @@ func RunPipeline(
 	logger := &TaskLogger{}
 	summary := &PipelineSummary{}
 	resultsMu := sync.Mutex{}
-	taskHashes := make(map[string]string)
+	taskTokens := make(map[string]string)
 	hashesMu := sync.RWMutex{}
+
+	defer GetTaskStats().Save()
 
 	pool := NewWeightedPool(parallel)
 
@@ -1784,16 +1968,30 @@ func RunPipeline(
 				depHashes := make(map[string]string)
 				hashesMu.RLock()
 				for _, dep := range t.DependsOn {
-					depHashes[dep] = taskHashes[dep]
+					depHashes[dep] = taskTokens[dep]
 				}
 				hashesMu.RUnlock()
 
 				taskHash := ComputeTaskHash(t, inputFileHashes, envVars, depHashes)
-				hashesMu.Lock()
-				taskHashes[t.Name] = taskHash
-				hashesMu.Unlock()
 
 				result := ExecuteTask(ctx, t, taskHash, logger, why, stream, casStore, passThrough)
+
+				// Speculative Early Cutoff dependency token:
+				// If task produced declared outputs, pass the deterministic Merkle OutputDigest
+				// to downstream tasks instead of the input taskHash. If rebuilt outputs are
+				// identical to the previous build, downstream tasks' taskHash remains unchanged,
+				// allowing them to remain CACHED without unnecessary rebuilds.
+				depToken := taskHash
+				if result.OutputDigest != "" {
+					depToken = "out:" + result.OutputDigest
+				}
+
+				hashesMu.Lock()
+				taskTokens[t.Name] = depToken
+				hashesMu.Unlock()
+
+				// Record execution duration for Dynamic Critical Path Method (CPM)
+				GetTaskStats().Record(t.Name, result.Duration)
 
 				resultsMu.Lock()
 				summary.Results = append(summary.Results, result)
@@ -1805,6 +2003,9 @@ func RunPipeline(
 					}
 				} else if result.Status == "EXECUTED" {
 					summary.ExecutedTasks++
+					if result.EarlyCutoff {
+						summary.EarlyCutoffTasks++
+					}
 				} else if result.Status == "FAILED" {
 					summary.FailedTasks++
 				}
@@ -1846,7 +2047,11 @@ func PrintSummaryTable(s *PipelineSummary) {
 
 	for _, r := range s.Results {
 		statusColor := ColorGreen
-		if r.Status == "FAILED" {
+		statusStr := r.Status
+		if r.EarlyCutoff {
+			statusColor = ColorMagenta
+			statusStr = "CUTOFF"
+		} else if r.Status == "FAILED" {
 			statusColor = ColorRed
 		} else if r.Status == "CACHED" {
 			statusColor = ColorCyan
@@ -1867,7 +2072,7 @@ func PrintSummaryTable(s *PipelineSummary) {
 			w,
 			"%s\t%s%s%s\t%s\t%s\t%s\tsha256:%s\n",
 			r.TaskName,
-			statusColor, r.Status, ColorReset,
+			statusColor, statusStr, ColorReset,
 			durStr,
 			origStr,
 			timeSavedStr,
@@ -1877,10 +2082,15 @@ func PrintSummaryTable(s *PipelineSummary) {
 	w.Flush()
 
 	fmt.Println(strings.Repeat("-", 78))
+	cutoffInfo := ""
+	if s.EarlyCutoffTasks > 0 {
+		cutoffInfo = fmt.Sprintf(", %s%d early cutoff%s", ColorMagenta, s.EarlyCutoffTasks, ColorReset)
+	}
 	fmt.Printf(
-		"Summary : %s%d cached%s, %s%d executed%s, %s%d failed%s\n",
+		"Summary : %s%d cached%s, %s%d executed%s%s, %s%d failed%s\n",
 		ColorCyan, s.CachedTasks, ColorReset,
 		ColorGreen, s.ExecutedTasks, ColorReset,
+		cutoffInfo,
 		ColorRed, s.FailedTasks, ColorReset,
 	)
 	fmt.Printf(
