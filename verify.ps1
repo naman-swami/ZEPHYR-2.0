@@ -57,7 +57,7 @@ Run-Check "Byte-identical binary builds via -trimpath" {
     if ($h1 -ne $h2) { throw "Hash mismatch: $h1 != $h2" }
 }
 
-Write-Host "`n-- STEP 3: Automated Test Suite (7 Packages) ---------------" -ForegroundColor Yellow
+Write-Host "`n-- STEP 3: Automated Test Suite (10 Packages) --------------" -ForegroundColor Yellow
 
 Run-Check "Full test suite (go test ./...)" {
     $out = go test ./... 2>&1
@@ -140,6 +140,24 @@ Run-Check "zephyr agent affected (blast-radius analysis)" {
     if ($LASTEXITCODE -ne 0) { throw $out }
     $json = $out | ConvertFrom-Json
     if (-not $json.data.directly_affected) { throw "Missing directly_affected array" }
+}
+
+Write-Host "`n-- STEP 10: LSP Server, P2P Cache & Resource Profiler ------" -ForegroundColor Yellow
+
+Run-Check "zephyr lsp --check (IDE Language Server static analysis)" {
+    $out = (& $zephyr lsp --check 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0 -or $out -notmatch "0 diagnostics") { throw $out }
+}
+
+Run-Check "zephyr p2p status (LAN P2P cache inventory)" {
+    $out = (& $zephyr p2p status 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0 -or $out -notmatch "ZEPHYR-P2P/2.0") { throw $out }
+}
+
+Run-Check "zephyr profile (Kernel CPU/Mem telemetry & SVG Flame Graph)" {
+    $out = (& $zephyr profile lint 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw $out }
+    if (-not (Test-Path ".taskcache/profile/flamegraph.svg")) { throw "Missing flamegraph.svg" }
 }
 
 Write-Host "`n================================================================" -ForegroundColor Cyan

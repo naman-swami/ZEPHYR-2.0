@@ -44,6 +44,9 @@
    - [Direction 8: AI Agent & MCP Protocol Integration (`zephyr agent` & `zephyr mcp`)](#direction-8-ai-agent--mcp-protocol-integration-zephyr-agent--zephyr-mcp)
    - [Direction 9: Distributed Remote HTTP Cache Server (`zephyr server`)](#direction-9-distributed-remote-http-cache-server-zephyr-server)
    - [Direction 10: Task Graph Visualization (`zephyr graph`)](#direction-10-task-graph-visualization-zephyr-graph)
+   - [Direction 11: Native IDE Language Server Protocol (`zephyr lsp`)](#direction-11-native-ide-language-server-protocol-zephyr-lsp)
+   - [Direction 12: Peer-to-Peer LAN Cache Sync (`zephyr p2p`)](#direction-12-peer-to-peer-lan-cache-sync-zephyr-p2p)
+   - [Direction 13: Kernel Resource Profiler & SVG Flame Graphs (`zephyr profile`)](#direction-13-kernel-resource-profiler--svg-flame-graphs-zephyr-profile)
 5. [Complete CLI Command & Option Matrix](#5-complete-cli-command--option-matrix)
    - [5.1 Primary Subcommands](#51-primary-subcommands)
    - [5.2 `zephyr run` Execution Flags](#52-zephyr-run-execution-flags)
@@ -578,6 +581,66 @@ Dependency Tree:
 
 ---
 
+### Direction 11: Native IDE Language Server Protocol (`zephyr lsp`)
+
+ZEPHYR includes a native **Language Server Protocol (LSP)** server over `stdio` (`Content-Length` framed JSON-RPC 2.0) for real-time `tasks.json` intelligence in **VS Code, Cursor, Zed, Neovim, and Helix**.
+
+#### Capabilities:
+* **Real-Time Diagnostics (`textDocument/publishDiagnostics`):** Detects circular dependencies (3-color DFS), undefined upstream tasks, missing commands, and path traversal violations as you type.
+* **Hover Telemetry (`textDocument/hover`):** Displays Markdown cards with a task's command, inputs, outputs, and historical execution durations from `.taskcache/stats.json`.
+* **Schema & Target Auto-Completion (`textDocument/completion`):** Suggests schema keys and defined task target names inside `depends_on`.
+
+#### Directions:
+
+```bash
+# Run instant CLI static analysis on tasks.json
+zephyr lsp --check
+
+# Start stdio Language Server for IDE integration
+zephyr lsp
+```
+
+---
+
+### Direction 12: Peer-to-Peer LAN Cache Sync (`zephyr p2p`)
+
+Share verified build artifacts across local developer network subnets without cloud servers. Every blob transferred over P2P is cryptographically hashed against its SHA-256 content digest before admission into `.taskcache/cas/objects/`, preventing cache poisoning on shared networks.
+
+#### Directions:
+
+```bash
+# 1. Inspect local P2P node inventory
+zephyr p2p status
+
+# 2. Discover active ZEPHYR peers on your local subnet via UDP beacons
+zephyr p2p discover --key team-cluster-secret
+
+# 3. Serve your local sharded CAS to teammates on port 9090
+zephyr p2p serve --port 9090 --key team-cluster-secret
+
+# 4. Pull missing CAS blobs & Action Cache manifests from a peer with zero-trust SHA-256 verification
+zephyr p2p sync --peer http://192.168.1.42:9090 --key team-cluster-secret
+```
+
+---
+
+### Direction 13: Kernel Resource Profiler & SVG Flame Graphs (`zephyr profile`)
+
+Measure exact kernel-level `UserTime`, `SystemTime`, wall-clock duration, CPU utilization percentage, and peak memory footprint per task, and automatically generate a standalone interactive **SVG Flame Graph** and **Chrome / Perfetto Trace JSON**.
+
+#### Directions:
+
+```bash
+# Profile default pipeline or specific targets and emit SVG Flame Graph
+zephyr profile
+zephyr profile lint repro-build
+```
+
+* **Interactive SVG Flame Graph:** Written to `.taskcache/profile/flamegraph.svg` (open in any browser to hover over execution bars and inspect CPU/memory metrics).
+* **Chrome / Perfetto Trace:** Written to `.taskcache/profile/trace.json` (compatible with `ui.perfetto.dev` and `chrome://tracing`).
+
+---
+
 ## 5. Complete CLI Command & Option Matrix
 
 ZEPHYR follows the standard CLI pattern:
@@ -597,6 +660,9 @@ zephyr [command] [flags...] [targets...] [-- pass-through-arguments...]
 | `capsule` | Ed25519 cryptographic Build Capsule lifecycle | `zephyr capsule <action>` | Subcommands: `keygen`, `create`, `verify`, `replay` |
 | `agent` | Machine-readable AI Agent semantic control interface | `zephyr agent <action>` | Subcommands: `graph`, `affected`, `verify`, `run` (`--allow-exec`) |
 | `mcp` | Start native Model Context Protocol (MCP) stdio server | `zephyr mcp` | JSON-RPC 2.0 over stdio for Cursor, Claude Code, OpenHands |
+| `lsp` | Native Language Server Protocol (LSP) for IDEs | `zephyr lsp [--check]` | `--check` (CLI static analysis), `--config <path>` |
+| `p2p` | Peer-to-Peer LAN cache discovery & verified sync | `zephyr p2p <action>` | Subcommands: `status`, `discover`, `serve`, `sync` (`--peer`, `--key`) |
+| `profile` | Kernel CPU/memory profiler & SVG Flame Graph generator | `zephyr profile [targets...]` | `--svg <path>`, `--trace <path>`, `--config <path>` |
 | `server` | Hardened Remote HTTP Cache Server | `zephyr server --port 8080` | `--port <N>`, `--token <secret>`, `--dir <path>`, `--allow-unauthenticated` |
 | `graph` | Visualize pipeline dependency tree | `zephyr graph` | `--format <ascii\|mermaid>` |
 | `list` | Print declared tasks and metadata | `zephyr list` | `--json` |

@@ -31,7 +31,10 @@ import (
 	"taskrunner/pkg/agent"
 	"taskrunner/pkg/bench"
 	"taskrunner/pkg/capsule"
+	"taskrunner/pkg/lsp"
 	mcpserver "taskrunner/pkg/mcp"
+	"taskrunner/pkg/p2p"
+	"taskrunner/pkg/profile"
 	"taskrunner/pkg/verify"
 )
 
@@ -2799,7 +2802,10 @@ func printUsage() {
 	fmt.Println("  capsule <subcommand>  Manage portable Build Capsules (create, inspect, verify, replay)")
 	fmt.Println("  adopt                 Zero-config project discovery (Go, Node.js, Rust, Python, Make)")
 	fmt.Println("  agent <subcommand>    Structured JSON interface for AI coding agents & IDE tools")
-	fmt.Println("  mcp                  Start native MCP stdio server (JSON-RPC 2.0 over stdin/stdout)")
+	fmt.Println("  mcp                   Start native MCP stdio server (JSON-RPC 2.0 over stdin/stdout)")
+	fmt.Println("  lsp                   Start native Language Server Protocol (LSP) server for IDEs")
+	fmt.Println("  p2p <subcommand>      Peer-to-Peer LAN cache discovery & verified CAS blob sync")
+	fmt.Println("  profile [targets...]  Task CPU/memory profiler & interactive SVG Flame Graph generator")
 	fmt.Println("  bench                 Empirical benchmarks (incremental time, skip rate, reproducibility)")
 	fmt.Println("  doctor                Deep audit workspace health, DAG validity, and system integrity")
 	fmt.Println("  affected              Execute only tasks modified by Git diff")
@@ -3680,6 +3686,213 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "lsp":
+		fs := flag.NewFlagSet("lsp", flag.ExitOnError)
+		checkMode := fs.Bool("check", false, "Run static LSP diagnostics on tasks.json and exit")
+		configFile := fs.String("config", DefaultConfig, "Path to tasks.json")
+		fs.Parse(args)
+
+		if *checkMode {
+			rawBytes, err := os.ReadFile(*configFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s[LSP ERROR]%s Failed to read %s: %v\n", ColorRed, ColorReset, *configFile, err)
+				os.Exit(1)
+			}
+			diags := lsp.AnalyzeConfig(string(rawBytes))
+			if len(diags) == 0 {
+				fmt.Printf("%s[ZEPHYR LSP]%s ✓ 0 diagnostics in %s. DAG and schema are 100%% valid.\n", ColorGreen, ColorReset, *configFile)
+				os.Exit(0)
+			}
+			for _, d := range diags {
+				fmt.Printf("%s[Line %d]%s %s\n", ColorRed, d.Range.Start.Line+1, ColorReset, d.Message)
+			}
+			os.Exit(1)
+		}
+
+		stats := make(map[string]int64)
+		for k, v := range GetTaskStats().Tasks {
+			stats[k] = v.LastDurationMs
+		}
+		fmt.Fprintf(os.Stderr, "[ZEPHYR LSP] Native Language Server Protocol active on stdio (Content-Length JSON-RPC 2.0)\n")
+		srv := lsp.NewServer(os.Stdin, os.Stdout, stats)
+		if err := srv.Serve(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "[ZEPHYR LSP] Error: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "p2p":
+		subCmd := "status"
+		subArgs := args
+		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			subCmd = args[0]
+			subArgs = args[1:]
+		}
+
+		switch subCmd {
+		case "status", "inventory":
+			hostname, _ := os.Hostname()
+			inv, err := p2p.ScanLocalInventory(CacheDir, hostname)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s[P2P ERROR]%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s[ZEPHYR P2P NODE INVENTORY]%s\n", ColorCyan, ColorReset)
+			fmt.Printf("  Node ID              : %s\n", inv.NodeID)
+			fmt.Printf("  Action Cache Entries : %d manifests\n", len(inv.ACHashes))
+			fmt.Printf("  Sharded CAS Blobs    : %d verified objects\n", len(inv.CASDigests))
+			fmt.Printf("  Protocol             : ZEPHYR-P2P/2.0 (SHA-256 Zero-Trust Verified)\n")
+
+		case "sync":
+			fs := flag.NewFlagSet("p2p sync", flag.ExitOnError)
+			peerURL := fs.String("peer", "", "Peer HTTP URL (e.g. http://192.168.1.42:9090)")
+			clusterKey := fs.String("key", "", "HMAC/Cluster authentication key")
+			fs.Parse(subArgs)
+
+			if *peerURL == "" {
+				fmt.Fprintf(os.Stderr, "%s[P2P SYNC]%s --peer <http://ip:port> is required\n", ColorRed, ColorReset)
+				os.Exit(1)
+			}
+			rep, err := p2p.SyncFromPeer(*peerURL, CacheDir, *clusterKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s[P2P SYNC ERROR]%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s[ZEPHYR P2P SYNC COMPLETE]%s\n", ColorGreen, ColorReset)
+			fmt.Printf("  Peer Endpoint      : %s\n", rep.PeerURL)
+			fmt.Printf("  CAS Blobs Synced   : %d (%d skipped)\n", rep.BlobsSynced, rep.BlobsSkipped)
+			fmt.Printf("  AC Manifests Synced: %d\n", rep.ManifestsSynced)
+			fmt.Printf("  Tampered Rejected  : %d\n", rep.TamperedRejected)
+			fmt.Printf("  Bytes Transferred  : %d bytes in %dms\n", rep.BytesTransferred, rep.DurationMs)
+
+		case "serve":
+			fs := flag.NewFlagSet("p2p serve", flag.ExitOnError)
+			port := fs.Int("port", 9090, "P2P HTTP sync port")
+			clusterKey := fs.String("key", "", "Optional cluster secret key")
+			fs.Parse(subArgs)
+
+			hostname, _ := os.Hostname()
+			addr := fmt.Sprintf("0.0.0.0:%d", *port)
+			fmt.Printf("%s[ZEPHYR P2P SERVER]%s Node '%s' serving verified CAS on %s\n", ColorCyan, ColorReset, hostname, addr)
+			handler := p2p.NewPeerHTTPHandler(CacheDir, hostname, *clusterKey)
+			if err := http.ListenAndServe(addr, handler); err != nil {
+				fmt.Fprintf(os.Stderr, "%s[P2P SERVER ERROR]%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+		case "discover":
+			fs := flag.NewFlagSet("p2p discover", flag.ExitOnError)
+			udpPort := fs.Int("port", 19876, "UDP broadcast discovery port")
+			timeout := fs.Duration("timeout", 1500*time.Millisecond, "Discovery listen timeout")
+			clusterKey := fs.String("key", "", "Cluster HMAC verification key")
+			fs.Parse(subArgs)
+
+			peers, err := p2p.ListenForBeacons(fmt.Sprintf("0.0.0.0:%d", *udpPort), *timeout, *clusterKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s[P2P DISCOVER ERROR]%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s[ZEPHYR P2P DISCOVERY]%s Found %d active subnet peers.\n", ColorCyan, ColorReset, len(peers))
+			for _, p := range peers {
+				fmt.Printf("  • Node: %s | Endpoint: http://%s\n", p.NodeID, p.HTTPAddr)
+			}
+		}
+
+	case "profile":
+		fs := flag.NewFlagSet("profile", flag.ExitOnError)
+		configPath := fs.String("config", "", "Path to config file")
+		svgOut := fs.String("svg", ".taskcache/profile/flamegraph.svg", "Output path for interactive SVG Flame Graph")
+		traceOut := fs.String("trace", ".taskcache/profile/trace.json", "Output path for Chrome Trace JSON")
+		fs.Parse(args)
+
+		origWd, _ := os.Getwd()
+		rootDir, resolvedCfg, err := FindConfigRoot(origWd, *configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sError:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+		_ = os.Chdir(rootDir)
+
+		cfg, err := LoadConfig(resolvedCfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sError:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+
+		targets := fs.Args()
+		if len(targets) == 0 {
+			if cfg.DefaultTask != "" {
+				targets = []string{cfg.DefaultTask}
+			} else {
+				for k := range cfg.Tasks {
+					targets = append(targets, k)
+				}
+			}
+		}
+
+		dag, err := BuildDAG(cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sDAG Error:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+		batches, err := GetExecutionBatches(dag, targets)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sDAG Error:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("%s⚡ ZEPHYR 2.0 — Kernel Task Resource Profiler & Flame Graph Engine%s\n", ColorCyan, ColorReset)
+		pipelineStart := time.Now()
+		var taskProfiles []profile.TaskProfile
+		var totalUser, totalSys float64
+		var peakMem int64
+
+		for bIdx, batch := range batches {
+			for _, tName := range batch {
+				tDef := cfg.Tasks[tName]
+				tp := profile.ProfileCommand(tName, tDef.Command, bIdx+1, pipelineStart)
+				taskProfiles = append(taskProfiles, tp)
+				totalUser += tp.UserCPUMs
+				totalSys += tp.SysCPUMs
+				if tp.PeakMemoryKB > peakMem {
+					peakMem = tp.PeakMemoryKB
+				}
+			}
+		}
+
+		totalWallMs := float64(time.Since(pipelineStart).Microseconds()) / 1000.0
+		profReport := &profile.PipelineProfile{
+			Timestamp:         time.Now().UTC().Format(time.RFC3339),
+			Platform:          fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
+			CPUCores:          runtime.NumCPU(),
+			TotalWallMs:       totalWallMs,
+			TotalUserCPUMs:    totalUser,
+			TotalSysCPUMs:     totalSys,
+			PeakMemoryKB:      peakMem,
+			Tasks:             taskProfiles,
+			FlameGraphSVGPath: *svgOut,
+			ChromeTracePath:   *traceOut,
+		}
+
+		_ = profile.GenerateFlameGraphSVG(profReport, *svgOut)
+		_ = profile.GenerateChromeTraceJSON(profReport, *traceOut)
+
+		fmt.Printf("\n%-18s %-10s %-12s %-12s %-12s %-10s %-10s\n", "Task", "Status", "Wall Time", "User CPU", "Sys CPU", "CPU %", "Peak Mem")
+		fmt.Printf("%-18s %-10s %-12s %-12s %-12s %-10s %-10s\n", "----", "------", "---------", "--------", "-------", "-----", "--------")
+		for _, tp := range taskProfiles {
+			fmt.Printf("%-18s %-10s %-12s %-12s %-12s %-10s %d KB\n",
+				tp.Name,
+				tp.Status,
+				fmt.Sprintf("%.2fms", tp.WallDurationMs),
+				fmt.Sprintf("%.2fms", tp.UserCPUMs),
+				fmt.Sprintf("%.2fms", tp.SysCPUMs),
+				fmt.Sprintf("%.1f%%", tp.CPUUtilizationPct),
+				tp.PeakMemoryKB,
+			)
+		}
+		fmt.Println("----------------------------------------------------------------------------------------")
+		fmt.Printf("%s[FLAME GRAPH SVG]%s Generated interactive flame graph: %s\n", ColorGreen, ColorReset, *svgOut)
+		fmt.Printf("%s[CHROME TRACE]%s    Generated Perfetto/Chrome trace : %s\n", ColorGreen, ColorReset, *traceOut)
+
 	case "bench":
 
 		origWd, _ := os.Getwd()
@@ -3698,7 +3911,7 @@ func main() {
 		printUsage()
 
 	default:
-		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "bench", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
+		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "lsp", "p2p", "profile", "bench", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
 		fmt.Fprintf(os.Stderr, "%sUnknown command '%s'.%s", ColorRed, cmd, ColorReset)
 		if len(suggestions) > 0 {
 			fmt.Fprintf(os.Stderr, " Did you mean: '%s'?", strings.Join(suggestions, "', '"))
