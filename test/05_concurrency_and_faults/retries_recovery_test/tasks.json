@@ -1,0 +1,9 @@
+{
+  "default": "flaky_task",
+  "tasks": {
+    "flaky_task": {
+      "command": "go run retry_flaky.go",
+      "retries": 2
+    }
+  }
+}

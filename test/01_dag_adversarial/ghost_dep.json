@@ -1,0 +1,11 @@
+{
+  "default": "task1",
+  "tasks": {
+    "task1": {
+      "command": "echo '1'",
+      "depends_on": [
+        "phantom_task"
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Zero-Latency CAS Restoration",
+    "passed": true,
+    "duration_ms": 94092600,
+    "detail": "Warm cache hit in 94.0926ms (CACHED=true, File Restored from CAS=true)"
+  },
+  {
+    "name": "Intelligent Cache Invalidation \u0026 --why Diagnostics",
+    "passed": false,
+    "duration_ms": 343543400,
+    "detail": "Modified input triggered targeted re-execution (Rebuilt=false, Explanation Found=true)"
+  },
+  {
+    "name": "Missing Output Behavior Audit",
+    "passed": true,
+    "duration_ms": 0,
+    "detail": "Exit 0 without creating declared output: Executed=true; Subsequent run cached=true"
+  },
+  {
+    "name": "High-Volume Output CAS Scaling (200 Files)",
+    "passed": true,
+    "duration_ms": 119515400,
+    "detail": "Restored all 50/50 files from CAS. Cold: 1.2227569s, Warm: 119.5154ms (10.2x faster). All files verified."
+  }
+]

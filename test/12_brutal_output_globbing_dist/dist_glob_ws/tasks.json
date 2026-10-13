@@ -1,0 +1,11 @@
+{
+  "default": "bundle_task",
+  "tasks": {
+    "bundle_task": {
+      "command": "go run gen.go",
+      "outputs": [
+        "dist/*.js"
+      ]
+    }
+  }
+}

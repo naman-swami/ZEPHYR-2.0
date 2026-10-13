@@ -1,0 +1,8 @@
+[
+  {
+    "name": "10-Way Simultaneous Cold Cache Write Race",
+    "passed": true,
+    "duration_ms": 2643558700,
+    "detail": "10 concurrent processes completed in 2.6435587s. Errors: 0/10. Output intact: true"
+  }
+]

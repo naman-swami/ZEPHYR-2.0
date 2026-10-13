@@ -1,0 +1,20 @@
+{
+  "default": "empty_task",
+  "tasks": {
+    "empty_task": {
+      "command": "cmd /c type nul \u003e empty.bin",
+      "inputs": [
+        "nonexistent_wildcard/**/*.xyz"
+      ],
+      "outputs": [
+        "empty.bin"
+      ]
+    },
+    "unicode_⚡_task": {
+      "command": "cmd /c echo UTF8_UNICODE_PAYLOAD \u003e utf8.txt",
+      "outputs": [
+        "utf8.txt"
+      ]
+    }
+  }
+}

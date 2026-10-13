@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Zero-Byte Artifact CAS Hashing \u0026 Restoration",
+    "passed": true,
+    "duration_ms": 278503100,
+    "detail": "Zero-byte file created: true; Restored from CAS: true; CACHED: true (Out1: [empty_task] [RUNNING] \"cmd /c type nul \u003e empty.bin\" (Hash: a3af49d4)\n[empty_task] [DONE] in 34ms\n\nTask        Status    Duration  Original Time  Time Saved  Cache Key\n----        ------    --------  -------------  ----------  ---------\nempty_task  EXECUTED  34ms      34ms           -           sha256:a3af49d4\n------------------------------------------------------------------------------\nSummary : 0 cached, 1 executed, 0 failed\nDuration: 205ms (Compute saved: 0s / 0.0%)\n------------------------------------------------------------------------------)"
+  },
+  {
+    "name": "Unicode UTF-8 Task Identifiers (unicode_⚡_task)",
+    "passed": true,
+    "duration_ms": 0,
+    "detail": "Unicode task execution: true (Out: [unicode_⚡_task] [RUNNING] \"cmd /c echo UTF8_UNICODE_PAYLOAD \u003e utf8.txt\" (Hash: 591701fd)\n[unicode_⚡_task] [DONE] in 36ms\n\nTask            Status    Duration  Original Time  Time Saved  Cache Key\n----            ------    --------  -------------  ----------  ---------\nunicode_⚡_task  EXECUTED  36ms      36ms           -           sha256:591701fd\n------------------------------------------------------------------------------\nSummary : 0 cached, 1 executed, 0 failed\nDuration: 226ms (Compute saved: 0s / 0.0%)\n------------------------------------------------------------------------------)"
+  }
+]

@@ -1,0 +1,90 @@
+{
+  "default": "aggregator",
+  "tasks": {
+    "aggregator": {
+      "command": "cmd /c echo All workers finished!",
+      "depends_on": [
+        "worker_00",
+        "worker_01",
+        "worker_02",
+        "worker_03",
+        "worker_04",
+        "worker_05",
+        "worker_06",
+        "worker_07",
+        "worker_08",
+        "worker_09",
+        "worker_10",
+        "worker_11",
+        "worker_12",
+        "worker_13",
+        "worker_14",
+        "worker_15",
+        "worker_16",
+        "worker_17",
+        "worker_18",
+        "worker_19"
+      ]
+    },
+    "worker_00": {
+      "command": "cmd /c echo worker 00 finished"
+    },
+    "worker_01": {
+      "command": "cmd /c echo worker 01 finished"
+    },
+    "worker_02": {
+      "command": "cmd /c echo worker 02 finished"
+    },
+    "worker_03": {
+      "command": "cmd /c echo worker 03 finished"
+    },
+    "worker_04": {
+      "command": "cmd /c echo worker 04 finished"
+    },
+    "worker_05": {
+      "command": "cmd /c echo worker 05 finished"
+    },
+    "worker_06": {
+      "command": "cmd /c echo worker 06 finished"
+    },
+    "worker_07": {
+      "command": "cmd /c echo worker 07 finished"
+    },
+    "worker_08": {
+      "command": "cmd /c echo worker 08 finished"
+    },
+    "worker_09": {
+      "command": "cmd /c echo worker 09 finished"
+    },
+    "worker_10": {
+      "command": "cmd /c echo worker 10 finished"
+    },
+    "worker_11": {
+      "command": "cmd /c echo worker 11 finished"
+    },
+    "worker_12": {
+      "command": "cmd /c echo worker 12 finished"
+    },
+    "worker_13": {
+      "command": "cmd /c echo worker 13 finished"
+    },
+    "worker_14": {
+      "command": "cmd /c echo worker 14 finished"
+    },
+    "worker_15": {
+      "command": "cmd /c echo worker 15 finished"
+    },
+    "worker_16": {
+      "command": "cmd /c echo worker 16 finished"
+    },
+    "worker_17": {
+      "command": "cmd /c echo worker 17 finished"
+    },
+    "worker_18": {
+      "command": "cmd /c echo worker 18 finished"
+    },
+    "worker_19": {
+      "command": "cmd /c echo worker 19 finished"
+    }
+  }
+}

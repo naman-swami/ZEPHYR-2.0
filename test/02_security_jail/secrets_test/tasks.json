@@ -1,0 +1,8 @@
+{
+  "default": "leak_task",
+  "tasks": {
+    "leak_task": {
+      "command": "cmd /c echo SecretToken: ghp_111122223333444455556666777788889999"
+    }
+  }
+}

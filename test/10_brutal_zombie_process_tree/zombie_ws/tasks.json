@@ -1,0 +1,9 @@
+{
+  "default": "deep_process_task",
+  "tasks": {
+    "deep_process_task": {
+      "command": "go run sleep15.go",
+      "timeout": "1s"
+    }
+  }
+}

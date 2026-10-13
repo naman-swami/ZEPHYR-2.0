@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Cross-Package Monorepo Cycle Detection (A -\u003e B -\u003e C -\u003e A)",
+    "passed": true,
+    "duration_ms": 70991800,
+    "detail": "Cross-package cycle detected: true. Output: Error: cyclic dependency detected: pkg-a#build -\u003e pkg-b#build -\u003e pkg-a#build -\u003e pkg-c#build"
+  }
+]

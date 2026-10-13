@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Strict Task Timeout Enforcement (1s timeout on 5s process)",
+    "passed": true,
+    "duration_ms": 1395411600,
+    "detail": "Process killed by Zephyr after timeout (Task killed in ~1.0s, exit code 1). Output: [sleep_task] [RUNNING] \"powershell -Command Start-Sleep -Seconds 5\" (Hash: c06aaed2)\n[sleep_task] [FAILED] in 1.299s: exit status 1"
+  },
+  {
+    "name": "Transient Failure Recovery via Retries",
+    "passed": true,
+    "duration_ms": 2553462100,
+    "detail": "Task retried until success. Total attempts recorded: 3 (Expected: 3). Recovered=true"
+  },
+  {
+    "name": "Permanent Failure Retries Exhaustion",
+    "passed": true,
+    "duration_ms": 2476436000,
+    "detail": "Exhausted all 3 attempts (1 run + 2 retries). Recorded attempts: 3. Pipeline failed cleanly."
+  },
+  {
+    "name": "Worker Pool Concurrency Scaling",
+    "passed": true,
+    "duration_ms": 1525127200,
+    "detail": "Serial (-parallel 1): 3.6200226s, Parallel (-parallel 4): 1.5251272s (2.37x speedup)"
+  }
+]

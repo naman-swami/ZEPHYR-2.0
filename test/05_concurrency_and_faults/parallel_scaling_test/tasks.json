@@ -1,0 +1,26 @@
+{
+  "default": "aggregate",
+  "tasks": {
+    "aggregate": {
+      "command": "cmd /c echo all done",
+      "depends_on": [
+        "sleep_1",
+        "sleep_2",
+        "sleep_3",
+        "sleep_4"
+      ]
+    },
+    "sleep_1": {
+      "command": "cmd /c powershell -Command Start-Sleep -Milliseconds 300"
+    },
+    "sleep_2": {
+      "command": "cmd /c powershell -Command Start-Sleep -Milliseconds 300"
+    },
+    "sleep_3": {
+      "command": "cmd /c powershell -Command Start-Sleep -Milliseconds 300"
+    },
+    "sleep_4": {
+      "command": "cmd /c powershell -Command Start-Sleep -Milliseconds 300"
+    }
+  }
+}

@@ -1,0 +1,302 @@
+{
+  "default": "chain_49",
+  "tasks": {
+    "chain_00": {
+      "command": "cmd /c echo chain 00"
+    },
+    "chain_01": {
+      "command": "cmd /c echo chain 01",
+      "depends_on": [
+        "chain_00"
+      ]
+    },
+    "chain_02": {
+      "command": "cmd /c echo chain 02",
+      "depends_on": [
+        "chain_01"
+      ]
+    },
+    "chain_03": {
+      "command": "cmd /c echo chain 03",
+      "depends_on": [
+        "chain_02"
+      ]
+    },
+    "chain_04": {
+      "command": "cmd /c echo chain 04",
+      "depends_on": [
+        "chain_03"
+      ]
+    },
+    "chain_05": {
+      "command": "cmd /c echo chain 05",
+      "depends_on": [
+        "chain_04"
+      ]
+    },
+    "chain_06": {
+      "command": "cmd /c echo chain 06",
+      "depends_on": [
+        "chain_05"
+      ]
+    },
+    "chain_07": {
+      "command": "cmd /c echo chain 07",
+      "depends_on": [
+        "chain_06"
+      ]
+    },
+    "chain_08": {
+      "command": "cmd /c echo chain 08",
+      "depends_on": [
+        "chain_07"
+      ]
+    },
+    "chain_09": {
+      "command": "cmd /c echo chain 09",
+      "depends_on": [
+        "chain_08"
+      ]
+    },
+    "chain_10": {
+      "command": "cmd /c echo chain 10",
+      "depends_on": [
+        "chain_09"
+      ]
+    },
+    "chain_11": {
+      "command": "cmd /c echo chain 11",
+      "depends_on": [
+        "chain_10"
+      ]
+    },
+    "chain_12": {
+      "command": "cmd /c echo chain 12",
+      "depends_on": [
+        "chain_11"
+      ]
+    },
+    "chain_13": {
+      "command": "cmd /c echo chain 13",
+      "depends_on": [
+        "chain_12"
+      ]
+    },
+    "chain_14": {
+      "command": "cmd /c echo chain 14",
+      "depends_on": [
+        "chain_13"
+      ]
+    },
+    "chain_15": {
+      "command": "cmd /c echo chain 15",
+      "depends_on": [
+        "chain_14"
+      ]
+    },
+    "chain_16": {
+      "command": "cmd /c echo chain 16",
+      "depends_on": [
+        "chain_15"
+      ]
+    },
+    "chain_17": {
+      "command": "cmd /c echo chain 17",
+      "depends_on": [
+        "chain_16"
+      ]
+    },
+    "chain_18": {
+      "command": "cmd /c echo chain 18",
+      "depends_on": [
+        "chain_17"
+      ]
+    },
+    "chain_19": {
+      "command": "cmd /c echo chain 19",
+      "depends_on": [
+        "chain_18"
+      ]
+    },
+    "chain_20": {
+      "command": "cmd /c echo chain 20",
+      "depends_on": [
+        "chain_19"
+      ]
+    },
+    "chain_21": {
+      "command": "cmd /c echo chain 21",
+      "depends_on": [
+        "chain_20"
+      ]
+    },
+    "chain_22": {
+      "command": "cmd /c echo chain 22",
+      "depends_on": [
+        "chain_21"
+      ]
+    },
+    "chain_23": {
+      "command": "cmd /c echo chain 23",
+      "depends_on": [
+        "chain_22"
+      ]
+    },
+    "chain_24": {
+      "command": "cmd /c echo chain 24",
+      "depends_on": [
+        "chain_23"
+      ]
+    },
+    "chain_25": {
+      "command": "cmd /c echo chain 25",
+      "depends_on": [
+        "chain_24"
+      ]
+    },
+    "chain_26": {
+      "command": "cmd /c echo chain 26",
+      "depends_on": [
+        "chain_25"
+      ]
+    },
+    "chain_27": {
+      "command": "cmd /c echo chain 27",
+      "depends_on": [
+        "chain_26"
+      ]
+    },
+    "chain_28": {
+      "command": "cmd /c echo chain 28",
+      "depends_on": [
+        "chain_27"
+      ]
+    },
+    "chain_29": {
+      "command": "cmd /c echo chain 29",
+      "depends_on": [
+        "chain_28"
+      ]
+    },
+    "chain_30": {
+      "command": "cmd /c echo chain 30",
+      "depends_on": [
+        "chain_29"
+      ]
+    },
+    "chain_31": {
+      "command": "cmd /c echo chain 31",
+      "depends_on": [
+        "chain_30"
+      ]
+    },
+    "chain_32": {
+      "command": "cmd /c echo chain 32",
+      "depends_on": [
+        "chain_31"
+      ]
+    },
+    "chain_33": {
+      "command": "cmd /c echo chain 33",
+      "depends_on": [
+        "chain_32"
+      ]
+    },
+    "chain_34": {
+      "command": "cmd /c echo chain 34",
+      "depends_on": [
+        "chain_33"
+      ]
+    },
+    "chain_35": {
+      "command": "cmd /c echo chain 35",
+      "depends_on": [
+        "chain_34"
+      ]
+    },
+    "chain_36": {
+      "command": "cmd /c echo chain 36",
+      "depends_on": [
+        "chain_35"
+      ]
+    },
+    "chain_37": {
+      "command": "cmd /c echo chain 37",
+      "depends_on": [
+        "chain_36"
+      ]
+    },
+    "chain_38": {
+      "command": "cmd /c echo chain 38",
+      "depends_on": [
+        "chain_37"
+      ]
+    },
+    "chain_39": {
+      "command": "cmd /c echo chain 39",
+      "depends_on": [
+        "chain_38"
+      ]
+    },
+    "chain_40": {
+      "command": "cmd /c echo chain 40",
+      "depends_on": [
+        "chain_39"
+      ]
+    },
+    "chain_41": {
+      "command": "cmd /c echo chain 41",
+      "depends_on": [
+        "chain_40"
+      ]
+    },
+    "chain_42": {
+      "command": "cmd /c echo chain 42",
+      "depends_on": [
+        "chain_41"
+      ]
+    },
+    "chain_43": {
+      "command": "cmd /c echo chain 43",
+      "depends_on": [
+        "chain_42"
+      ]
+    },
+    "chain_44": {
+      "command": "cmd /c echo chain 44",
+      "depends_on": [
+        "chain_43"
+      ]
+    },
+    "chain_45": {
+      "command": "cmd /c echo chain 45",
+      "depends_on": [
+        "chain_44"
+      ]
+    },
+    "chain_46": {
+      "command": "cmd /c echo chain 46",
+      "depends_on": [
+        "chain_45"
+      ]
+    },
+    "chain_47": {
+      "command": "cmd /c echo chain 47",
+      "depends_on": [
+        "chain_46"
+      ]
+    },
+    "chain_48": {
+      "command": "cmd /c echo chain 48",
+      "depends_on": [
+        "chain_47"
+      ]
+    },
+    "chain_49": {
+      "command": "cmd /c echo chain 49",
+      "depends_on": [
+        "chain_48"
+      ]
+    }
+  }
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Node.js package.json Auto-Discovery",
+    "passed": true,
+    "project_type": "Node.js",
+    "duration_ms": 86476700,
+    "detail": "Discovered Node.js project. Tasks found: build=true, test=true, lint=true"
+  },
+  {
+    "name": "Python pyproject.toml Auto-Discovery",
+    "passed": true,
+    "project_type": "Python",
+    "duration_ms": 85561600,
+    "detail": "Discovered Python project with 2 generated tasks"
+  },
+  {
+    "name": "Rust Cargo.toml Auto-Discovery",
+    "passed": true,
+    "project_type": "Rust",
+    "duration_ms": 82921000,
+    "detail": "Discovered Rust project with 3 generated cargo tasks"
+  },
+  {
+    "name": "Go go.mod Auto-Discovery",
+    "passed": true,
+    "project_type": "Go",
+    "duration_ms": 88319100,
+    "detail": "Discovered Go module with standard lint, test, build targets"
+  },
+  {
+    "name": "Legacy Makefile Auto-Discovery",
+    "passed": true,
+    "project_type": "Makefile",
+    "duration_ms": 88378700,
+    "detail": "Discovered Makefile project with 3 parsed targets"
+  },
+  {
+    "name": "Safe Overwrite Protection",
+    "passed": true,
+    "project_type": "Policy Check",
+    "duration_ms": 0,
+    "detail": "Blocked overwrite without force: true; Allowed overwrite with --force: true"
+  },
+  {
+    "name": "Corrupted Manifest Graceful Resilience",
+    "passed": true,
+    "project_type": "Error Handling",
+    "duration_ms": 0,
+    "detail": "Handled corrupted package.json without unhandled panic (Graceful=true)"
+  }
+]

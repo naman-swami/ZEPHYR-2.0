@@ -1,0 +1,23 @@
+{
+  "default": "agent_build",
+  "tasks": {
+    "agent_build": {
+      "command": "cmd /c echo build ok",
+      "depends_on": [
+        "agent_lint"
+      ],
+      "inputs": [
+        "src/app.go"
+      ],
+      "outputs": [
+        "bin/app.exe"
+      ]
+    },
+    "agent_lint": {
+      "command": "cmd /c echo lint ok",
+      "inputs": [
+        "src/app.go"
+      ]
+    }
+  }
+}

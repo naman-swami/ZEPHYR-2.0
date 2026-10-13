@@ -1,0 +1,14 @@
+{
+  "default": "compile",
+  "tasks": {
+    "compile": {
+      "command": "cmd /c echo BUILD \u003e bin.dat",
+      "inputs": [
+        "src/code.txt"
+      ],
+      "outputs": [
+        "bin.dat"
+      ]
+    }
+  }
+}

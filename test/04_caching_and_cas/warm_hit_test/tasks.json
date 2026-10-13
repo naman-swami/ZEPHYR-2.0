@@ -1,0 +1,14 @@
+{
+  "default": "gen_out",
+  "tasks": {
+    "gen_out": {
+      "command": "cmd /c echo PROCESSED_DATA \u003e out.txt",
+      "inputs": [
+        "src/input.txt"
+      ],
+      "outputs": [
+        "out.txt"
+      ]
+    }
+  }
+}

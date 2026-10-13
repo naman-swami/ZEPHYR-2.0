@@ -1,0 +1,9 @@
+{
+  "name": "sample-node-app",
+  "version": "1.0.0",
+  "scripts": {
+    "lint": "eslint src/",
+    "test": "jest",
+    "build": "esbuild src/index.ts --outdir=dist"
+  }
+}

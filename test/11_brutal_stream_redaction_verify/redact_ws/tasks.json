@@ -1,0 +1,8 @@
+{
+  "default": "leak_task",
+  "tasks": {
+    "leak_task": {
+      "command": "cmd /c echo TEST_REDACTION_PLACEHOLDER"
+    }
+  }
+}

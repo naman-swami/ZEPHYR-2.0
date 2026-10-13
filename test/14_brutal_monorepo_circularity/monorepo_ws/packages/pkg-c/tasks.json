@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "build": {
+      "command": "echo building C",
+      "depends_on": [
+        "pkg-a#build"
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Real-Time Stream \u0026 Command Redaction (Verified Zero Leakage)",
+    "passed": true,
+    "duration_ms": 296320100,
+    "detail": "Zero secret leaks across startup log and stream output. HasMask: true (Leaks: ghp=false, sk_live=false, bearer=false)"
+  }
+]

@@ -3,7 +3,7 @@
 > **ZEPHYR** — High-Performance, Zero-Dependency Incremental Build System  
 > Crafted with 100% Go Standard Library by **Naman Swami**.
 
-This document details the **24 standard library substitutions** implemented in `ZEPHYR`, fulfilling the **STDLIB Log Bonus Challenge (+3 points)** and showcasing the **Zero-Dependency Craft (30% weight)**.
+This document details the **27 standard library substitutions** implemented in `ZEPHYR`, fulfilling the **STDLIB Log Bonus Challenge (+3 points)** and showcasing the **Zero-Dependency Craft (30% weight)**.
 
 ---
 
@@ -35,6 +35,9 @@ This document details the **24 standard library substitutions** implemented in `
 | **22** | `find-up` / `pkg-dir` | Root-finding / Run-from-anywhere | `filepath.Dir` upward traversal loop | Traverses parent folders to locate `tasks.json` from any deep nested subdirectory. |
 | **23** | `in-toto` / `slsa-verifier` | SLSA v1.0 Build Provenance Generator | `encoding/json`, `os/exec` (git rev-parse) | Generates tamper-evident JSON-LD provenance attestations linking Git commits, input hashes, and output SHA256 digests. |
 | **24** | `github.com/nx-cli` / `lerna` | Monorepo multi-workspace discovery | `filepath.Glob`, `filepath.Rel`, struct maps | Discovers sub-package `tasks.json` in `packages/*` and stitches them into a unified topological DAG. |
+| **25** | `microsoft/vscode-languageclient` / `eclipse/lsp4j` | Language Server Protocol (LSP) server | `bufio.Scanner`, `encoding/json`, `fmt.Fprintf` | Content-Length framed JSON-RPC 2.0 stdio LSP server supporting `initialize`, `publishDiagnostics`, `hover`, and `completion` — with no external LSP SDK. |
+| **26** | `hashicorp/mdns` / `grandcat/zeroconf` | mDNS/Bonjour LAN service discovery | `net.UDPConn`, `crypto/hmac`, `net/http` | UDP beacon broadcast/listen loop (`ZEPHYR-P2P/2.0`) with HMAC-SHA256 cluster authentication and HTTP-based verified CAS blob sync. |
+| **27** | `brendangregg/FlameGraph` / `parca-dev/parca` | Interactive CPU Flame Graph generation | `os.ProcessState`, `strings.Builder`, `fmt.Fprintf` | Standalone interactive SVG Flame Graph and Chrome/Perfetto Trace JSON using kernel `UserTime`/`SystemTime` telemetry — zero native/C dependencies. |
 
 ---
 

@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Hardlink Shared Inode In-Place Mutation Trap",
+    "passed": true,
+    "duration_ms": 0,
+    "detail": "Hardlink In-place Mutation: CAS blob mutated via shared inode: false. Restored file matches original: true."
+  }
+]

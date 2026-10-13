@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "build": {
+      "command": "echo building B",
+      "depends_on": [
+        "pkg-c#build"
+      ]
+    }
+  }
+}

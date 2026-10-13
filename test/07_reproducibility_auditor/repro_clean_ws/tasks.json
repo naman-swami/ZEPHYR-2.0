@@ -1,0 +1,11 @@
+{
+  "default": "repro_task",
+  "tasks": {
+    "repro_task": {
+      "command": "cmd /c if not exist bin mkdir bin \u0026 echo CONSTANT_REPRODUCIBLE_BYTE_STREAM \u003e bin\\app.bin",
+      "outputs": [
+        "bin/app.bin"
+      ]
+    }
+  }
+}

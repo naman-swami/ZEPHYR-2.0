@@ -1,0 +1,6 @@
+{
+  "default": "pkg-a#build",
+  "workspaces": [
+    "packages/*"
+  ]
+}

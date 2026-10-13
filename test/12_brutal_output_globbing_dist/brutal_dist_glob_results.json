@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Declared Output Globbing in 'dist/' (patternMentionsDir patch)",
+    "passed": true,
+    "duration_ms": 2283520500,
+    "detail": "dist/*.js outputs discovered: 10/10. Restored from CAS: 10/10. Warm CACHED: true. Output: [bundle_task] [RUNNING] \"go run gen.go\" (Hash: e9490691)\n[bundle_task] [DONE] in 1.918s\n\nTask         Status    Duration  Original Time  Time Saved  Cache Key\n----         ------    --------  -------------  ----------  ---------\nbundle_task  EXECUTED  1.918s    1.918s         -           sha256:e9490691\n------------------------------------------------------------------------------\nSummary : 0 cached, 1 executed, 0 failed\nDuration: 2.17s (Compute saved: 0s / 0.0%)\n------------------------------------------------------------------------------"
+  }
+]

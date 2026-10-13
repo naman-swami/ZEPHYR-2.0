@@ -1,0 +1,11 @@
+{
+  "default": "flaky_task",
+  "tasks": {
+    "flaky_task": {
+      "command": "go run rand.go",
+      "outputs": [
+        "bin/rand.bin"
+      ]
+    }
+  }
+}

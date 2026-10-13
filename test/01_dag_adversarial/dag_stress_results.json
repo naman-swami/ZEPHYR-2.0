@@ -1,0 +1,66 @@
+[
+  {
+    "name": "Direct Cyclic Dependency (A -\u003e A)",
+    "passed": true,
+    "exit_code": 1,
+    "duration_ms": 100726300,
+    "expected": "exit=1, content contains 'cyclic dependency detected: taskA -\u003e taskA'",
+    "observed": "exit=1"
+  },
+  {
+    "name": "Indirect Cyclic Dependency (A -\u003e B -\u003e C -\u003e A)",
+    "passed": true,
+    "exit_code": 1,
+    "duration_ms": 82947400,
+    "expected": "exit=1, content contains 'cyclic dependency detected'",
+    "observed": "exit=1"
+  },
+  {
+    "name": "Missing/Ghost Dependency Detection",
+    "passed": true,
+    "exit_code": 1,
+    "duration_ms": 105644900,
+    "expected": "exit=1, content contains 'depends on unknown task 'phantom_task''",
+    "observed": "exit=1"
+  },
+  {
+    "name": "Corrupt JSON Syntax Parsing",
+    "passed": true,
+    "exit_code": 1,
+    "duration_ms": 95467800,
+    "expected": "exit=1, content contains 'failed to parse JSON'",
+    "observed": "exit=1"
+  },
+  {
+    "name": "Ultra-Deep Linear Chain (50 Levels) Cold Run",
+    "passed": true,
+    "exit_code": 0,
+    "duration_ms": 14825334200,
+    "expected": "exit=0, content contains '50 executed, 0 failed'",
+    "observed": "exit=0"
+  },
+  {
+    "name": "Ultra-Deep Linear Chain (50 Levels) Warm Cache Replay",
+    "passed": true,
+    "exit_code": 0,
+    "duration_ms": 116809800,
+    "expected": "exit=0, content contains '50 cached, 0 executed, 0 failed'",
+    "observed": "exit=0"
+  },
+  {
+    "name": "Wide Parallel Fan-Out (20 Workers -\u003e 1 Aggregator)",
+    "passed": true,
+    "exit_code": 0,
+    "duration_ms": 2029038100,
+    "expected": "exit=0, content contains '21 executed, 0 failed'",
+    "observed": "exit=0"
+  },
+  {
+    "name": "Disconnected Subgraph Isolated Execution",
+    "passed": true,
+    "exit_code": 0,
+    "duration_ms": 694207600,
+    "expected": "exit=0, content contains '2 executed, 0 failed'",
+    "observed": "exit=0"
+  }
+]

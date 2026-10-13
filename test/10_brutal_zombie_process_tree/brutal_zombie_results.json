@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Deep Process Tree Termination (taskkill /F /T verification)",
+    "passed": true,
+    "duration_ms": 1343887000,
+    "detail": "Process tree killed cleanly in 1.343887s (under 4s ceiling vs 15s child sleep). Status: true."
+  }
+]

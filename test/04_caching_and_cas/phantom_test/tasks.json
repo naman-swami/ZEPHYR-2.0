@@ -1,0 +1,11 @@
+{
+  "default": "phantom_task",
+  "tasks": {
+    "phantom_task": {
+      "command": "cmd /c echo I did not produce nonexistent.txt",
+      "outputs": [
+        "nonexistent.txt"
+      ]
+    }
+  }
+}

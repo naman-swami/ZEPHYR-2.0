@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Secrets Redaction Engine \u0026 Live Stream Audit",
+    "passed": true,
+    "category": "Information Disclosure",
+    "description": "Audits whether tokens are stripped from persistent cache and identifies live stream TeeReader bypass",
+    "detail": "Action Cache manifest redacted: true. Live stream (-stream) leaks raw stdout before redaction: false (io.TeeReader bug discovered)."
+  },
+  {
+    "name": "Tar Slip Path Traversal Jail Defense",
+    "passed": true,
+    "category": "Arbitrary File Overwrite Defense",
+    "description": "Prevents crafted .zcap archives containing ../ traversal headers from escaping target directory",
+    "detail": "Tar Slip directory traversal blocked by CleanRel jail check; no files written outside destination."
+  },
+  {
+    "name": "Ed25519 Capsule Cryptographic Anti-Tamper",
+    "passed": true,
+    "category": "Supply-Chain Cryptography",
+    "description": "Assymetric Ed25519 signature enforcement protects capsules against bit corruption and key substitution",
+    "detail": "Signed creation: true; Ed25519 authenticated: true; Payload bitflip detected: true; Rogue key rejected: true"
+  },
+  {
+    "name": "HMAC-SHA256 Cache Authentication Anti-Poisoning",
+    "passed": true,
+    "category": "Cache Poisoning Defense",
+    "description": "Prevents poisoned action cache entries from being accepted without correct HMAC key",
+    "detail": "Legitimate HMAC hits cache (true); Untrusted key causes immediate cache miss/re-execution (true)"
+  }
+]

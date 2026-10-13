@@ -1,0 +1,7 @@
+[project]
+name = "sample-python-pkg"
+version = "0.1.0"
+dependencies = [
+    "pytest>=7.0",
+    "flake8>=5.0"
+]

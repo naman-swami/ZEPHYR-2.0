@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Agent Strict Permission Gating (Default Deny)",
+    "passed": true,
+    "duration_ms": 71670200,
+    "detail": "Execution without --allow-exec strictly rejected with PERMISSION_DENIED. Blocked=true"
+  },
+  {
+    "name": "Agent Authorized Execution (--allow-exec)",
+    "passed": true,
+    "duration_ms": 157878600,
+    "detail": "Execution with --allow-exec succeeded. JSON result returned."
+  },
+  {
+    "name": "Agent Dependency Graph Inspection",
+    "passed": true,
+    "duration_ms": 80090200,
+    "detail": "Agent graph returned 2 nodes in structured JSON format"
+  },
+  {
+    "name": "Native Model Context Protocol (MCP) Server",
+    "passed": true,
+    "duration_ms": 89801300,
+    "detail": "MCP JSON-RPC Handshake: init=true, tools/list=true, tools/call(zephyr_graph)=true"
+  }
+]

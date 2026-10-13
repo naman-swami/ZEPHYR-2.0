@@ -1,0 +1,39 @@
+{
+  "default": "build",
+  "tasks": {
+    "build": {
+      "name": "build",
+      "command": "go build -o bin/safetytest .",
+      "inputs": [
+        "**/*.go",
+        "go.mod"
+      ],
+      "outputs": [
+        "bin/safetytest*"
+      ],
+      "depends_on": [
+        "test"
+      ]
+    },
+    "lint": {
+      "name": "lint",
+      "command": "go vet ./...",
+      "inputs": [
+        "**/*.go"
+      ],
+      "outputs": []
+    },
+    "test": {
+      "name": "test",
+      "command": "go test -v ./...",
+      "inputs": [
+        "**/*.go",
+        "go.mod"
+      ],
+      "outputs": [],
+      "depends_on": [
+        "lint"
+      ]
+    }
+  }
+}

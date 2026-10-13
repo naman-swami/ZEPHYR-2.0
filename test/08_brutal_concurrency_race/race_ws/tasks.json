@@ -1,0 +1,11 @@
+{
+  "default": "race_task",
+  "tasks": {
+    "race_task": {
+      "command": "go run work.go",
+      "outputs": [
+        "output.dat"
+      ]
+    }
+  }
+}

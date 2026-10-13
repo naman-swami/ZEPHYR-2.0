@@ -1,0 +1,11 @@
+{
+  "default": "compile",
+  "tasks": {
+    "compile": {
+      "command": "cmd /c echo ORIGINAL_UNMUTATED_BYTECODE \u003e bin\\app.exe",
+      "outputs": [
+        "bin/app.exe"
+      ]
+    }
+  }
+}

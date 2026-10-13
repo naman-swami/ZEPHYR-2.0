@@ -1,0 +1,11 @@
+{
+  "default": "build_app",
+  "tasks": {
+    "build_app": {
+      "command": "cmd /c echo build complete",
+      "outputs": [
+        "bin/app.exe"
+      ]
+    }
+  }
+}

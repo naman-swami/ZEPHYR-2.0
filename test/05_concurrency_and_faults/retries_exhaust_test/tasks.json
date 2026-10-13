@@ -1,0 +1,9 @@
+{
+  "default": "perm_fail",
+  "tasks": {
+    "perm_fail": {
+      "command": "go run fail.go",
+      "retries": 2
+    }
+  }
+}

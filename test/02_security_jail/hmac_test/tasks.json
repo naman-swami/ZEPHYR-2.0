@@ -1,0 +1,8 @@
+{
+  "default": "task_sign",
+  "tasks": {
+    "task_sign": {
+      "command": "cmd /c echo legit_hmac_output"
+    }
+  }
+}

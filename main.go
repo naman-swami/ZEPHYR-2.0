@@ -3767,12 +3767,30 @@ func main() {
 		case "serve":
 			fs := flag.NewFlagSet("p2p serve", flag.ExitOnError)
 			port := fs.Int("port", 9090, "P2P HTTP sync port")
+			udpPort := fs.Int("udp-port", 19876, "UDP beacon broadcast port")
 			clusterKey := fs.String("key", "", "Optional cluster secret key")
 			fs.Parse(subArgs)
 
 			hostname, _ := os.Hostname()
 			addr := fmt.Sprintf("0.0.0.0:%d", *port)
-			fmt.Printf("%s[ZEPHYR P2P SERVER]%s Node '%s' serving verified CAS on %s\n", ColorCyan, ColorReset, hostname, addr)
+			fmt.Printf("%s[ZEPHYR P2P SERVER]%s Node '%s' serving verified CAS on %s (UDP beacon port %d)\n", ColorCyan, ColorReset, hostname, addr, *udpPort)
+			go func() {
+				beacon := p2p.PeerBeacon{
+					NodeID:   hostname,
+					HTTPAddr: fmt.Sprintf("127.0.0.1:%d", *port),
+				}
+				ticker := time.NewTicker(500 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						_ = p2p.BroadcastBeacon(fmt.Sprintf("255.255.255.255:%d", *udpPort), beacon, *clusterKey)
+						_ = p2p.BroadcastBeacon(fmt.Sprintf("127.0.0.1:%d", *udpPort), beacon, *clusterKey)
+					}
+				}
+			}()
 			handler := p2p.NewPeerHTTPHandler(CacheDir, hostname, *clusterKey)
 			if err := http.ListenAndServe(addr, handler); err != nil {
 				fmt.Fprintf(os.Stderr, "%s[P2P SERVER ERROR]%s %v\n", ColorRed, ColorReset, err)
@@ -3795,6 +3813,10 @@ func main() {
 			for _, p := range peers {
 				fmt.Printf("  • Node: %s | Endpoint: http://%s\n", p.NodeID, p.HTTPAddr)
 			}
+
+		default:
+			fmt.Fprintf(os.Stderr, "%sUnknown p2p subcommand '%s'.%s Valid subcommands: status, discover, serve, sync\n", ColorRed, subCmd, ColorReset)
+			os.Exit(1)
 		}
 
 	case "profile":

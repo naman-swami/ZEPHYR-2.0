@@ -1,0 +1,11 @@
+{
+  "default": "taskA",
+  "tasks": {
+    "taskA": {
+      "command": "echo 'taskA'",
+      "depends_on": [
+        "taskA"
+      ]
+    }
+  }
+}

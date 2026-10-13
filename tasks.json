@@ -9,7 +9,7 @@
     },
     "build": {
       "command": "go build -o bin/taskrunner-demo main.go",
-      "inputs": ["main.go", "go.mod"],
+      "inputs": ["main.go", "go.mod", "pkg/**/*.go"],
       "outputs": ["bin/taskrunner-demo", "bin/taskrunner-demo.exe"],
       "depends_on": ["lint"],
       "env_vars": ["GOOS", "GOARCH", "APP_ENV"],
@@ -17,7 +17,7 @@
     },
     "repro-build": {
       "command": "go build -trimpath -ldflags=-buildid= -o bin/taskrunner-demo.exe main.go",
-      "inputs": ["main.go", "go.mod"],
+      "inputs": ["main.go", "go.mod", "pkg/**/*.go"],
       "outputs": ["bin/taskrunner-demo.exe"],
       "depends_on": ["lint"],
       "timeout": "2m"

@@ -91,7 +91,7 @@ Modern build orchestrators (such as Turborepo, Nx, and Gradle) accelerate build 
 ## 2. Quickstart (60 Seconds to Velocity)
 
 > [!TIP]
-> **Automated One-Click Verification:** Run `powershell -ExecutionPolicy Bypass -File .\verify.ps1` to execute the automated 13-point verification suite in under 90 seconds.
+> **Automated One-Click Verification:** Run `powershell -ExecutionPolicy Bypass -File .\verify.ps1` to execute the automated 16-point verification suite in under 90 seconds.
 
 ### Step 1: Clone and Build Standalone Binary
 

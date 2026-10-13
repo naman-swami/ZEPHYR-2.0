@@ -1,0 +1,23 @@
+{
+  "default": "island1_b",
+  "tasks": {
+    "island1_a": {
+      "command": "cmd /c echo island1_a"
+    },
+    "island1_b": {
+      "command": "cmd /c echo island1_b",
+      "depends_on": [
+        "island1_a"
+      ]
+    },
+    "island2_x": {
+      "command": "cmd /c echo island2_x"
+    },
+    "island2_y": {
+      "command": "cmd /c echo island2_y",
+      "depends_on": [
+        "island2_x"
+      ]
+    }
+  }
+}

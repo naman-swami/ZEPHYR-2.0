@@ -1,0 +1,10 @@
+{
+  "default": "sleep_task",
+  "tasks": {
+    "sleep_task": {
+      "command": "powershell -Command Start-Sleep -Seconds 5",
+      "shell": "powershell",
+      "timeout": "1s"
+    }
+  }
+}
