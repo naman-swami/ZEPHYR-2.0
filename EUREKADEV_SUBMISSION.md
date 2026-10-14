@@ -25,21 +25,23 @@
 
 ---
 
-## 2. The Core Problem: The Modern Build & Supply-Chain Tax
+---
 
-Modern software teams and monorepos face four compounding crises:
+## 2. The Core Problem: Build Transparency, Authenticity & Verification
 
-### 1. The Tooling Bloat Tax
-Modern orchestration tools (Turborepo, Nx) impose hundreds of transitive dependencies, 500 MB+ `node_modules` footprints, daemon runtime fragility, and slow startup times. Conversely, legacy tools like `make` rely strictly on filesystem modification timestamps (`mtime`), which break in CI environments and ignore environment variable drift.
+Modern software projects rely on repeated operations such as compiling code, running tests, checking quality, and packaging releases. As projects grow and AI coding assistants make code changes more frequently, developers need to understand not only how to execute these operations, but also why a task ran, whether its outputs are reproducible, and whether a previously generated artifact can be trusted:
 
-### 2. The Phantom Flakiness Deficit
-"It works on my machine" remains the most expensive lie in software engineering. Two identical output hashes from repeated runs on a developer's workstation are evidence of reproducibility under those specific conditions, not proof of determinism. Embedded build timestamps (`__DATE__`, `time.Now()`), random seeds, and host path leakages cause silent CI breakages and non-reproducible releases.
+### 1. The Explainability Gap
+While established task orchestrators (such as Nx and Turborepo) provide affected-task analysis and remote caching, developers frequently treat build systems as black boxes. When an unexpected rebuild occurs, engineers need transparent cryptographic diagnostics (`--why`) explaining precisely which input file, argument, or environment variable triggered cache invalidation.
 
-### 3. The Unauthenticated Cache Vulnerability
-Modern CI/CD pipelines blindly restore cached binaries. If a remote cache or local disk storage is compromised, an attacker can substitute malicious binaries without altering cache keys. Hash verification alone confirms integrity, but does **not** establish publisher authenticity.
+### 2. The Reproducibility Deficit
+"It works on my machine" remains a persistent challenge in software engineering. Two identical output hashes from repeated runs under tested conditions provide evidence of consistency, not universal proof of determinism. Embedded build timestamps (`time.Now()`), compiler build IDs, and host path leakages cause non-deterministic releases. Developers need tools that can isolate and pinpoint exact hex byte offsets of binary divergence.
 
-### 4. The Blind Downstream Rebuild Cascade
-In conventional build engines, modifying a comment or format string in a root library triggers a blind cascade of rebuilds across all downstream packages, wasting valuable developer time and cloud compute.
+### 3. Cache Integrity vs. Publisher Authenticity
+Modern CI/CD pipelines often restore cached binaries based strictly on content hashes. While a matching SHA-256 hash verifies that content matches a recorded digest, it does not establish publisher authenticity. To defend against cache tampering across machines, build systems must separate content integrity from digital publisher signatures.
+
+### 4. Minimal Toolchain Footprint
+Many build systems require substantial runtime dependencies (e.g. Node.js runtimes, package managers, or complex daemons). A self-contained, single-binary architecture with zero third-party dependencies provides an easily auditable, low-friction foundation that runs anywhere without environment bootstrapping.
 
 ---
 
@@ -184,16 +186,16 @@ zephyr capsule replay --out-dir release_dir .taskcache/capsules/repro-build.zcap
 Tested through the multi-trial benchmark harness (`zephyr bench`) across $N=5$ controlled compilation trials:
 *Hardware: AMD Ryzen 5 7600X (12 Cores, 4.7 GHz) | 32 GB DDR5 RAM | Windows 11 / AMD64 | Go go1.27.0*
 
-| Workload Condition | Median Duration | Min Duration | Max Duration | Measured Speedup |
+| Workload Condition | Median Duration | Min Duration | Max Duration | Characterization |
 | :--- | :--- | :--- | :--- | :--- |
-| **Clean Execution (Cold)** | **1,378.7 ms** | 1,365.1 ms | 2,095.4 ms | Baseline |
-| **Warm Cache Retrieval** | **1.24 ms** | 1.12 ms | 4.42 ms | **1,108.9× Faster** |
-| **1-File Diff (Incremental)**| **2,061.9 ms** | 2,010.5 ms | 2,234.3 ms | Targeted Rebuild |
-| **Capsule Replay (Zero-Cache)**| **28.7 ms** | 24.1 ms | 31.5 ms | Verified Extract |
+| **Clean Execution (Cold)** | **1,378.7 ms** | 1,365.1 ms | 2,095.4 ms | Baseline full compilation of task pipeline |
+| **Warm-Cache Retrieval** | **1.24 ms** | 1.12 ms | 4.42 ms | Metadata check & hardlink CAS artifact restoration |
+| **One-File-Difference Run** | **2,061.9 ms** | 2,010.5 ms | 2,234.3 ms | Selective recompilation of affected target subgraph |
+| **Build Capsule Replay** | **28.7 ms** | 24.1 ms | 31.5 ms | Zero-cache unarchive, verification & output extraction |
 
-- **Unnecessary Execution Avoidance:** 60.0% of tasks skipped on a 1-file modification (3 of 5 tasks avoided).
-- **Reproducibility Digest:** Verified 100% byte-identical across clean workspace clones (`72a5dff490...`).
-- *Methodological Scope Disclosure:* Compute savings are reported in wall-clock time and avoided task invocations; no unsubstantiated carbon/energy figures are claimed without dedicated hardware power telemetry.
+- **Task-Skipping Efficiency:** 3 of 5 tasks skipped for the tested one-file modification (60.0% reduction in executed tasks on this benchmark graph).
+- **Reproducibility Observation:** Byte-identical outputs observed across isolated runs under tested conditions.
+- *Methodological Scope Disclosure:* These are results from a specific benchmark environment (`zephyr bench`), not universal performance claims across arbitrary projects. Cold execution and warm-cache retrieval perform fundamentally different workloads; the incremental rebuild duration depends directly on which tasks within the DAG are affected by a given code modification.
 
 ---
 
