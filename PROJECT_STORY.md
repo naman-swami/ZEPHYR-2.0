@@ -65,21 +65,24 @@ Every command in ZEPHYR was engineered to address a specific practical friction 
 | **`zephyr graph` / `list`** | Renders an ASCII visualization of the task dependency graph or outputs a tabular summary of configured tasks. | **Understanding Complex Task Relationships:** Deeply nested task graphs can be difficult to interpret from raw JSON. `graph` provides a visual representation of execution order and dependency paths. | Recursive DFS tree traversal, `fmt` |
 | **`zephyr bench`** | Executes repeated controlled trials across clean and warm cache conditions to measure execution timings. | **Verifiable Performance Measurement:** Performance claims in developer tooling require reproducible evaluation. `bench` provides a self-contained multi-trial test harness with median, min, and max timings. | Controlled trial loops, `time.Now`, statistical aggregations |
 | **`zephyr server`**<br>`--port`, `--token`, `--dir` | Serves an HTTP remote cache endpoint with constant-time token validation and request body limits. | **Lightweight Shared Caching:** Teams needing a centralized cache often have to deploy complex external storage infrastructure. `server` provides a zero-dependency remote cache server runnable anywhere. | `net/http`, `crypto/subtle`, `http.MaxBytesReader` |
+| **`zephyr watch [targets]`** | Continuous file watch mode with 350ms topological debounce and reverse-DAG affected-task rebuild. | **Editor Save Storms & Blind Rebuilds:** Naive file watchers fire duplicate builds on editor atomic writes (e.g. vim temp swap/rename) and rebuild the whole project. `watch` debounces events and rebuilds only the affected reverse-DAG subgraph. | `time.Ticker`, `filepath.WalkDir`, `time.Sleep` |
+| **`zephyr stress`** | Automated Chaos Gauntlet testing 6 extreme architectural stress and resilience scenarios. | **Unverified Resilience Claims:** Build systems rarely prove resilience against bit rot, kill-storm interrupts, or path fuzzing. `stress` tests corruption quarantine, crash-atomic writes, 1,000-node DAG cycles, clock skew, and Tar Slip traversal in automated reproducible suites. | `crypto/sha256`, `math/rand`, `sync`, `os.Chtimes` |
 
 ---
 
 ## 🛠️ How We Built It
 
-ZEPHYR is implemented in Go and relies exclusively on the Go standard library for its own execution, avoiding third-party Go module dependencies (an empty `require ()` block in `go.mod` across 27 standard library subsystems).
+ZEPHYR is implemented in Go and relies exclusively on the Go standard library for its own execution, avoiding third-party Go module dependencies (an empty `require ()` block in `go.mod` across 11 internal packages and 28 standard library subsystems).
 
 Its architecture combines several established computer science techniques:
 
 - **Dependency graphs:** Topological ordering (Kahn's algorithm) and three-color depth-first search (DFS) cycle detection establish valid execution sequences.
-- **Content-based caching:** Streaming SHA-256 hashing computes input fingerprints across files, arguments, and environment variables; a two-tier 256-bucket sharded content-addressable store (CAS) manages artifact deduplication.
+- **Content-based caching & Self-Healing CAS:** Streaming SHA-256 hashing computes input fingerprints; a two-tier 256-bucket sharded CAS manages deduplication with crash-atomic `fsync` writes, verify-on-read corruption detection, and automatic quarantine.
 - **Concurrent execution:** Goroutine pools and channel synchronization schedule independent tasks concurrently while respecting dependency constraints.
 - **Cryptographic verification:** SHA-256 digests provide content integrity, while asymmetric Ed25519 signatures authenticate capsule publishers.
 - **Structured interfaces:** Stdout JSON-RPC 2.0 servers provide integration points for the Model Context Protocol (MCP) and Language Server Protocol (LSP).
-- **Portable packaging:** Build Capsules package selected build outputs and manifest metadata using standard `archive/tar` and `compress/gzip` with path-sanitization checks.
+- **Portable packaging & Safety Jails:** Build Capsules package selected build outputs and manifest metadata using standard `archive/tar` and `compress/gzip` with lexical path jails defending against Tar Slip attacks.
+- **Chaos & Resilience Engine:** Self-contained stress test engine (`pkg/stress`) rigorously exercising atomic crash safety, memory corruption quarantine, and 1,000-node graph stress.
 
 The zero-third-party-dependency design applies strictly to ZEPHYR's Go implementation. Individual projects orchestrated by ZEPHYR still use whichever compilers, runtimes, package managers, and toolchains their own tasks require.
 
@@ -123,7 +126,8 @@ In a controlled five-trial experiment on Windows 11 / AMD64, using an AMD Ryzen 
 - Implemented portable Build Capsules (`.zcap`) with cryptographic hash verification, Ed25519 publisher signatures, and Tar Slip extraction protection.
 - Added zero-config project discovery (`zephyr adopt`) and structured AI agent interfaces (`zephyr agent` & `zephyr mcp`).
 - Implemented protocol extensions including an in-editor Language Server (`zephyr lsp`), local subnet cache sharing (`zephyr p2p`), and kernel-level resource profiling (`zephyr profile`).
-- Created a comprehensive test suite: 16/16 verification checks passing in `verify.ps1`, 14/14 adversarial stress test suites passing in `test/run_all_tests.ps1`, and 10/10 Go packages passing unit tests.
+- Created the Chaos Gauntlet (`zephyr stress`): 6 automated architectural stress scenarios testing bit-rot corruption quarantine, crash-atomic fsync, 1,000-node DAG cycles, clock skew invariance, and Tar Slip traversal fuzzing.
+- Established a comprehensive verification harness: 17/17 verification checks passing in `verify.ps1`, 14/14 adversarial stress test suites passing in `test/run_all_tests.ps1`, and 11/11 Go packages passing unit tests.
 
 ---
 

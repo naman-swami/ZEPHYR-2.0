@@ -35,6 +35,7 @@ import (
 	mcpserver "taskrunner/pkg/mcp"
 	"taskrunner/pkg/p2p"
 	"taskrunner/pkg/profile"
+	"taskrunner/pkg/stress"
 	"taskrunner/pkg/verify"
 )
 
@@ -326,6 +327,18 @@ func ValidateSafePath(baseDir, targetPath string) (string, error) {
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return "", fmt.Errorf("invalid base directory: %w", err)
+	}
+
+	// Check for URL-encoded traversal (e.g. %2e%2e%2f -> ../)
+	if strings.Contains(targetPath, "%") {
+		lower := strings.ToLower(targetPath)
+		if strings.Contains(lower, "%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") {
+			return "", fmt.Errorf("workspace boundary violation: percent-encoded traversal sequence detected: '%s'", targetPath)
+		}
+	}
+
+	if filepath.IsAbs(targetPath) || strings.HasPrefix(targetPath, "/") || strings.HasPrefix(targetPath, "\\") || filepath.VolumeName(targetPath) != "" {
+		return "", fmt.Errorf("workspace boundary violation: absolute or rooted path '%s' escapes workspace '%s'", targetPath, absBase)
 	}
 
 	absTarget, err := filepath.Abs(filepath.Join(absBase, targetPath))
@@ -1258,6 +1271,7 @@ func (cas *CASStore) StoreBlob(srcPath string) (string, error) {
 		_ = os.Remove(tmpPath)
 		return "", err
 	}
+	_ = tmpFile.Sync()
 	tmpFile.Close()
 
 	if err := os.Rename(tmpPath, targetPath); err != nil {
@@ -1268,6 +1282,8 @@ func (cas *CASStore) StoreBlob(srcPath string) (string, error) {
 	return hash, nil
 }
 
+var ErrCorruptedBlob = errors.New("CAS object SHA-256 verification failed (corrupted)")
+
 func (cas *CASStore) RestoreBlob(hash, destPath string) error {
 	cas.mu.RLock()
 	defer cas.mu.RUnlock()
@@ -1275,6 +1291,16 @@ func (cas *CASStore) RestoreBlob(hash, destPath string) error {
 	blobPath := cas.BlobPath(hash)
 	if _, err := os.Stat(blobPath); err != nil {
 		return fmt.Errorf("CAS object '%s' not found: %w", hash, err)
+	}
+
+	// Verify-on-Read: Verify that the cached blob content hasn't suffered bit rot or tampering
+	computedHash, err := ComputeFileHash(blobPath)
+	if err != nil || computedHash != hash {
+		quarantineDir := filepath.Join(filepath.Dir(cas.rootDir), "quarantine")
+		_ = os.MkdirAll(quarantineDir, 0755)
+		quarantinePath := filepath.Join(quarantineDir, fmt.Sprintf("%s.bad.%d", hash, time.Now().UnixNano()))
+		_ = os.Rename(blobPath, quarantinePath)
+		return fmt.Errorf("%w: expected %s, got %s (quarantined to %s)", ErrCorruptedBlob, hash, computedHash, quarantinePath)
 	}
 
 	_ = os.MkdirAll(filepath.Dir(destPath), 0755)
@@ -1299,8 +1325,11 @@ func (cas *CASStore) RestoreBlob(hash, destPath string) error {
 	defer destFile.Close()
 
 	buf := make([]byte, 64*1024)
-	_, err = io.CopyBuffer(destFile, srcFile, buf)
-	return err
+	if _, err := io.CopyBuffer(destFile, srcFile, buf); err != nil {
+		return err
+	}
+	_ = destFile.Sync()
+	return nil
 }
 
 func StoreOutputBlobs(cas *CASStore, outputHashes map[string]string) error {
@@ -1556,30 +1585,37 @@ func ExecuteTask(
 			}
 
 			if verified {
-				entry.LastUsed = time.Now()
-				updatedData, _ := json.Marshal(entry)
-				_ = os.WriteFile(actionCachePath, updatedData, 0644)
+				restoreErr := RestoreOutputBlobs(cas, entry.OutputHashes)
+				if restoreErr != nil {
+					// Self-Healing Cache: Action Cache pointed to a corrupted or missing CAS blob!
+					// Invalidate the bad action cache manifest and force clean rebuild.
+					_ = os.Remove(actionCachePath)
+					logger.Log(fmt.Sprintf("%s[%s]%s %s[SELF-HEAL]%s Corrupted/missing CAS blob detected. Invalidated cache & rebuilding.",
+						ColorYellow, task.Name, ColorReset, ColorYellow, ColorReset))
+				} else {
+					entry.LastUsed = time.Now()
+					updatedData, _ := json.Marshal(entry)
+					_ = os.WriteFile(actionCachePath, updatedData, 0644)
 
-				_ = RestoreOutputBlobs(cas, entry.OutputHashes)
+					logger.Log(fmt.Sprintf("%s[%s]%s %s[CACHED]%s (Hash: %s)", ColorCyan, task.Name, ColorReset, ColorCyan, ColorReset, truncateHash(taskHash)))
+					if entry.Stdout != "" {
+						fmt.Print(entry.Stdout)
+					}
+					if entry.Stderr != "" {
+						fmt.Fprint(os.Stderr, entry.Stderr)
+					}
 
-				logger.Log(fmt.Sprintf("%s[%s]%s %s[CACHED]%s (Hash: %s)", ColorCyan, task.Name, ColorReset, ColorCyan, ColorReset, truncateHash(taskHash)))
-				if entry.Stdout != "" {
-					fmt.Print(entry.Stdout)
-				}
-				if entry.Stderr != "" {
-					fmt.Fprint(os.Stderr, entry.Stderr)
-				}
-
-				return TaskResult{
-					TaskName:         task.Name,
-					Status:           "CACHED",
-					Duration:         time.Millisecond,
-					OriginalDuration: time.Duration(entry.OriginalDurationMs) * time.Millisecond,
-					Hash:             taskHash,
-					OutputDigest:     ComputeOutputDigest(entry.OutputHashes),
-					ExitCode:         entry.ExitCode,
-					Stdout:           entry.Stdout,
-					Stderr:           entry.Stderr,
+					return TaskResult{
+						TaskName:         task.Name,
+						Status:           "CACHED",
+						Duration:         time.Millisecond,
+						OriginalDuration: time.Duration(entry.OriginalDurationMs) * time.Millisecond,
+						Hash:             taskHash,
+						OutputDigest:     ComputeOutputDigest(entry.OutputHashes),
+						ExitCode:         entry.ExitCode,
+						Stdout:           entry.Stdout,
+						Stderr:           entry.Stderr,
+					}
 				}
 			}
 		}
@@ -2790,6 +2826,99 @@ func GenerateASCIIGraph(cfg *Config) string {
 	return sb.String()
 }
 
+type fileWatchMeta struct {
+	mtime time.Time
+	size  int64
+}
+
+func runIntelligentWatch(
+	ctx context.Context,
+	cfg *Config,
+	targetTasks []string,
+	parallel int,
+	why bool,
+	stream bool,
+	jsonOut bool,
+	failFast bool,
+	passThrough []string,
+) {
+	fmt.Printf("%s[WATCH]%s Intelligent reverse-DAG watch mode active (Press Ctrl+C to stop)...\n\n", ColorCyan, ColorReset)
+
+	// Run initial pipeline
+	_, _ = RunPipeline(ctx, cfg, targetTasks, parallel, why, false, stream, jsonOut, failFast, passThrough)
+
+	// Build dependency structures for blast-radius calculation
+	tasksInputs := make(map[string][]string)
+	dependentsMap := make(map[string][]string)
+	for name, t := range cfg.Tasks {
+		tasksInputs[name] = t.Inputs
+		for _, dep := range t.DependsOn {
+			dependentsMap[dep] = append(dependentsMap[dep], name)
+		}
+	}
+
+	scanWorkspace := func() map[string]fileWatchMeta {
+		curr := make(map[string]fileWatchMeta)
+		_ = filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				if d != nil && d.IsDir() && (ignoredDirs[d.Name()] || d.Name() == ".git" || d.Name() == ".taskcache") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			info, err := d.Info()
+			if err == nil {
+				curr[filepath.ToSlash(path)] = fileWatchMeta{mtime: info.ModTime(), size: info.Size()}
+			}
+			return nil
+		})
+		return curr
+	}
+
+	snapshot := scanWorkspace()
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			curr := scanWorkspace()
+			var changedFiles []string
+
+			for path, meta := range curr {
+				old, exists := snapshot[path]
+				if !exists || meta.mtime.After(old.mtime) || meta.size != old.size {
+					changedFiles = append(changedFiles, path)
+				}
+			}
+			for path := range snapshot {
+				if _, exists := curr[path]; !exists {
+					changedFiles = append(changedFiles, path)
+				}
+			}
+
+			if len(changedFiles) > 0 {
+				// 350ms debounce window to coalesce rapid editor save storms
+				time.Sleep(350 * time.Millisecond)
+				snapshot = scanWorkspace()
+
+				affected := ComputeAffectedTasks(tasksInputs, dependentsMap, changedFiles, matchGlob)
+				if len(affected) == 0 {
+					affected = targetTasks
+				}
+
+				fmt.Printf("\n%s[WATCH]%s %d file modification(s) detected. Rebuilding %d affected task(s): %s\n\n",
+					ColorYellow, ColorReset, len(changedFiles), len(affected), strings.Join(affected, ", "))
+
+				_, _ = RunPipeline(ctx, cfg, affected, parallel, why, false, stream, jsonOut, failFast, passThrough)
+				snapshot = scanWorkspace()
+			}
+		}
+	}
+}
+
 func printUsage() {
 	fmt.Printf("%s%s - %s%s\n", ColorCyan, ProjectName, Tagline, ColorReset)
 	fmt.Printf("%sCrafted with 100%% Go Standard Library by %s%s\n\n", ColorGray, Author, ColorReset)
@@ -2810,6 +2939,8 @@ func printUsage() {
 	fmt.Println("  doctor                Deep audit workspace health, DAG validity, and system integrity")
 	fmt.Println("  affected              Execute only tasks modified by Git diff")
 	fmt.Println("  server                Start built-in Zero-Dependency Remote Cache HTTP Server")
+	fmt.Println("  watch [targets...]    Intelligent file watch with reverse-DAG debounce & affected rebuild")
+	fmt.Println("  stress                Chaos Gauntlet: 6 automated stress & self-healing resilience tests")
 	fmt.Println("  list                  Display configured tasks in formatted table")
 	fmt.Println("  graph                 Render dependency graph (ASCII or Mermaid)")
 	fmt.Println("  clean                 Purge cache entries by age, size, or all")
@@ -2927,58 +3058,8 @@ func main() {
 		failFast := !*noFailFast
 
 		if *watch {
-			fmt.Printf("%s[WATCH]%s Watching workspace for changes (Press Ctrl+C to stop)...\n\n", ColorCyan, ColorReset)
-			runPipelineFunc := func() {
-				_, _ = RunPipeline(ctx, cfg, targetTasks, *parallel, *why, false, *stream, *jsonOut, failFast, passThrough)
-			}
-			runPipelineFunc()
-
-			lastMod := make(map[string]time.Time)
-			updateModTimes := func() {
-				_ = filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
-					if err == nil && !d.IsDir() {
-						if info, err := d.Info(); err == nil {
-							lastMod[path] = info.ModTime()
-						}
-					}
-					return nil
-				})
-			}
-			updateModTimes()
-
-			ticker := time.NewTicker(500 * time.Millisecond)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					changed := false
-					_ = filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
-						if err != nil || d.IsDir() {
-							if d != nil && d.IsDir() && ignoredDirs[d.Name()] {
-								return filepath.SkipDir
-							}
-							return nil
-						}
-						info, err := d.Info()
-						if err == nil {
-							if oldTime, exists := lastMod[path]; !exists || info.ModTime().After(oldTime) {
-								changed = true
-								lastMod[path] = info.ModTime()
-							}
-						}
-						return nil
-					})
-
-					if changed {
-						fmt.Printf("\n%s[WATCH]%s File modification detected. Re-running pipeline...\n\n", ColorYellow, ColorReset)
-						runPipelineFunc()
-						updateModTimes()
-					}
-				}
-			}
+			runIntelligentWatch(ctx, cfg, targetTasks, *parallel, *why, *stream, *jsonOut, failFast, passThrough)
+			return
 		}
 
 		summary, err := RunPipeline(ctx, cfg, targetTasks, *parallel, *why, *dryRun, *stream, *jsonOut, failFast, passThrough)
@@ -3926,6 +4007,51 @@ func main() {
 		}
 		fmt.Println(bench.FormatTerminalReport(report))
 
+	case "watch":
+		fs := flag.NewFlagSet("watch", flag.ExitOnError)
+		configPath := fs.String("config", "", "Path to config file")
+		parallel := fs.Int("parallel", runtime.NumCPU(), "Worker pool capacity")
+		why := fs.Bool("why", false, "Explain cache miss reasons")
+		stream := fs.Bool("stream", false, "Stream task outputs with task prefixes")
+		jsonOut := fs.Bool("json", false, "Emit machine-readable JSON summary")
+		noFailFast := fs.Bool("no-fail-fast", false, "Continue sibling tasks on error")
+		fs.Parse(args)
+
+		origWd, _ := os.Getwd()
+		rootDir, resolvedConfig, err := FindConfigRoot(origWd, *configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sError:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+		_ = os.Chdir(rootDir)
+		_ = LoadDotEnv(rootDir)
+
+		cfg, err := LoadConfig(resolvedConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sError:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+
+		targets := fs.Args()
+		if len(targets) == 0 && cfg.DefaultTask != "" {
+			targets = []string{cfg.DefaultTask}
+		}
+
+		runIntelligentWatch(ctx, cfg, targets, *parallel, *why, *stream, *jsonOut, !*noFailFast, passThrough)
+		return
+
+	case "stress":
+		origWd, _ := os.Getwd()
+		rep, err := stress.RunGauntlet(origWd)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sError running Chaos Gauntlet:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+		fmt.Print(stress.FormatTerminalReport(rep))
+		if rep.TotalFailed > 0 {
+			os.Exit(1)
+		}
+
 	case "version", "--version", "-v":
 		fmt.Printf("%s (%s/%s, 100%% Go stdlib by %s)\n", ProjectName, runtime.GOOS, runtime.GOARCH, Author)
 
@@ -3933,7 +4059,7 @@ func main() {
 		printUsage()
 
 	default:
-		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "lsp", "p2p", "profile", "bench", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
+		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "lsp", "p2p", "profile", "bench", "stress", "watch", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
 		fmt.Fprintf(os.Stderr, "%sUnknown command '%s'.%s", ColorRed, cmd, ColorReset)
 		if len(suggestions) > 0 {
 			fmt.Fprintf(os.Stderr, " Did you mean: '%s'?", strings.Join(suggestions, "', '"))

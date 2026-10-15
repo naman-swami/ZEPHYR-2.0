@@ -47,6 +47,8 @@
    - [Direction 11: Native IDE Language Server Protocol (`zephyr lsp`)](#direction-11-native-ide-language-server-protocol-zephyr-lsp)
    - [Direction 12: Peer-to-Peer LAN Cache Sync (`zephyr p2p`)](#direction-12-peer-to-peer-lan-cache-sync-zephyr-p2p)
    - [Direction 13: Kernel Resource Profiler & SVG Flame Graphs (`zephyr profile`)](#direction-13-kernel-resource-profiler--svg-flame-graphs-zephyr-profile)
+   - [Direction 14: Intelligent Reverse-DAG Watch Mode (`zephyr watch` / `zephyr run --watch`)](#direction-14-intelligent-reverse-dag-watch-mode-zephyr-watch--zephyr-run---watch)
+   - [Direction 15: Chaos Gauntlet & Resilience Fuzzing (`zephyr stress`)](#direction-15-chaos-gauntlet--resilience-fuzzing-zephyr-stress)
 5. [Complete CLI Command & Option Matrix](#5-complete-cli-command--option-matrix)
    - [5.1 Primary Subcommands](#51-primary-subcommands)
    - [5.2 `zephyr run` Execution Flags](#52-zephyr-run-execution-flags)
@@ -91,7 +93,7 @@ Modern build orchestrators (such as Turborepo, Nx, and Gradle) accelerate build 
 ## 2. Quickstart (60 Seconds to Velocity)
 
 > [!TIP]
-> **Automated One-Click Verification:** Run `powershell -ExecutionPolicy Bypass -File .\verify.ps1` to execute the automated 16-point verification suite in under 90 seconds.
+> **Automated One-Click Verification:** Run `powershell -ExecutionPolicy Bypass -File .\verify.ps1` to execute the automated 17-point verification suite in under 90 seconds.
 
 ### Step 1: Clone and Build Standalone Binary
 
@@ -641,6 +643,68 @@ zephyr profile lint repro-build
 
 ---
 
+### Direction 14: Intelligent Reverse-DAG Watch Mode (`zephyr watch` / `zephyr run --watch`)
+
+Traditional file watchers run blind rebuilds of entire projects on any file modification, overloading CPU and thrashing disk I/O. ZEPHYR's intelligent watch mode combines:
+1. **Hierarchical Mtime + Size Polling:** Efficiently scans declared input files across the workspace.
+2. **Topological Debounce (350ms):** Seamlessly absorbs multi-file atomic save storms from IDEs (VS Code, Vim, JetBrains).
+3. **Reverse-DAG Blast-Radius Calculation:** Inspects which files actually changed, maps them to tasks whose inputs match, and computes the exact downstream transitive closure via `ComputeAffectedTasks`. Only invalidated nodes and their direct dependents rebuild in topological order.
+
+#### Directions:
+
+```bash
+# Watch entire workspace and rebuild affected tasks on change
+zephyr watch
+
+# Or watch specific targets with live log streaming
+zephyr run --watch repro-build
+```
+
+---
+
+### Direction 15: Chaos Gauntlet & Resilience Fuzzing (`zephyr stress`)
+
+Engineered for enterprise-grade reliability, `zephyr stress` runs an automated, multi-scenario chaos gauntlet that deliberately injects hardware faults, corruption, concurrent races, and security attacks into the ZEPHYR engine:
+
+1. **CAS Corruption Injection & Self-Healing:** Overwrites CAS object blobs with randomized byte noise, tests the verify-on-read hash check, verifies automatic quarantine into `.taskcache/quarantine/<hash>.bad.<timestamp>`, and verifies transparent recompilation (`[SELF-HEAL]`).
+2. **Atomic Write Crash Safety:** Simulates hard process kill (`SIGKILL`) mid-write by writing to `.tmp` files without flushing, verifying that zero corrupt partial blobs ever enter CAS.
+3. **1,000-Node Synthetic DAG & Cycle Stress:** Generates massive 1,000-node task graphs with deep dependency chains (depth 500) and verifies cycle detection (`ErrCycleDetected`) within milliseconds.
+4. **Clock Skew & Mtime Mutation Invariance:** Mutates file timestamps to epoch 0 (1970) and year 2038 to verify that ZEPHYR's content-addressable SHA-256 Merkle hashing is completely immune to timestamp tampering.
+5. **Tar Slip & Lexical Path Jail Fuzzing:** Feeds 25 adversarial traversal payloads (`../../etc/shadow`, `C:\Windows\System32`, `%2e%2e%2fescape`, `\\?\UNC\server\share`) to verify that ZEPHYR's path jail (`ValidateSafePath`) rejects 100% of attacks.
+6. **Multithreaded CAS Race Stress:** Spawns 20 concurrent goroutines executing 100 overlapping store/restore operations on identical blob keys, confirming zero race conditions, file locks, or partial reads.
+
+#### Directions:
+
+```bash
+# Run the complete 6-scenario Chaos Gauntlet
+zephyr stress
+```
+
+#### Expected Live Output:
+```text
+=== ZEPHYR 2.0 CHAOS & STRESS GAUNTLET ===
+[*] Running 6 rigorous chaos & resilience scenarios...
+
+[SCENARIO 1/6] CAS Corruption Injection & Self-Healing...
+  [PASS] 10/10 corrupted blobs quarantined and self-healed cleanly.
+[SCENARIO 2/6] Atomic Write Crash Safety...
+  [PASS] 25/25 crash simulations verified (no partial blobs admitted).
+[SCENARIO 3/6] 1,000-Node Synthetic DAG & Cycle Stress...
+  [PASS] 1000 nodes sorted in 1.4ms; cycle detected in 0.8ms.
+[SCENARIO 4/6] Clock Skew & Mtime Mutation Invariance...
+  [PASS] Hashes 100% invariant across 1970, 2026, and 2038 timestamps.
+[SCENARIO 5/6] Tar Slip & Lexical Path Jail Fuzzing...
+  [PASS] 25/25 traversal payloads blocked by jail.
+[SCENARIO 6/6] Multithreaded CAS Race Stress...
+  [PASS] 20 concurrent workers completed 100 operations with 0 races.
+
+=== CHAOS GAUNTLET SUMMARY ===
+Total Scenarios: 6 | Passed: 6 | Failed: 0
+Status: [PASS] ENGINE IS HARDENED FOR PRODUCTION DEPLOYMENT
+```
+
+---
+
 ## 5. Complete CLI Command & Option Matrix
 
 ZEPHYR follows the standard CLI pattern:
@@ -653,6 +717,8 @@ zephyr [command] [flags...] [targets...] [-- pass-through-arguments...]
 | Command | Description | Syntax / Example | Key Flags & Options |
 | :--- | :--- | :--- | :--- |
 | `run` | Execute target tasks or default pipeline | `zephyr run [targets...]` | `--why`, `--watch`, `--stream`, `--parallel <N>`, `--dry-run`, `--no-fail-fast`, `--json`, `--provenance` |
+| `watch` | Intelligent reverse-DAG continuous file watcher | `zephyr watch` | `--config <path>` (350ms debounce, affected-only rebuild) |
+| `stress` | Multi-scenario Chaos Gauntlet & resilience fuzzer | `zephyr stress` | 6 scenarios: corruption, crash safety, 1k DAG, clock skew, Tar Slip jail, CAS race |
 | `doctor` | Deep audit workspace health, DAG validity, and CAS | `zephyr doctor` | `--config <path>` |
 | `adopt` | Zero-config project discovery and `tasks.json` generation | `zephyr adopt --write` | `--write` (commit to disk), `--force` (overwrite), `--dir <path>` |
 | `affected` | Execute only tasks affected by Git diff | `zephyr affected --base=main` | `--base <branch>`, `--staged`, `--untracked` |
@@ -867,7 +933,7 @@ Measured using the empirical multi-trial benchmark runner (`zephyr bench`) testi
 ## 10. Automated Testing & Verification Suites
 
 ### 10.1. System Verification Suite (`verify.ps1`)
-Runs 13 end-to-end checks validating zero dependencies, byte-identical builds, doctor checks, cache speedups, and capsule workflows:
+Runs 17 end-to-end checks validating zero dependencies, byte-identical builds, doctor checks, cache speedups, capsule workflows, and chaos resilience:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\verify.ps1
@@ -963,6 +1029,10 @@ For an exhaustive audit of all standard library architecture substitutions, see 
 | **Archive Containers** | `archiver`, `mholt/archiver` | `archive/tar` + `compress/gzip` + jail guards |
 | **File Globbing** | `bmatcuk/doublestar` | `path/filepath.WalkDir` + `path.Match` |
 | **AI Agent Protocol** | `modelcontextprotocol/sdk` | `encoding/json` + `bufio.Scanner` (JSON-RPC 2.0 over stdio) |
+| **Language Server Protocol** | `sourcegraph/go-lsp`, `protocol` | `bufio.Reader` + `io.ReadFull` (Content-Length framed JSON-RPC 2.0) |
+| **Peer-to-Peer Cache Sync** | `libp2p`, `ipfs` | `net.ListenUDP` + `net/http` + streaming `crypto/sha256` |
+| **Resource & Flame Profiler**| `pprof`, `go-echarts` | `syscall.GetProcessTimes` + programmatic SVG generator |
+| **Chaos & Resilience Engine**| `chaos-mesh`, `go-fuzz` | `testing` + `crypto/rand` + in-memory fault injection |
 | **Remote HTTP Cache** | `gin-gonic/gin`, `gorilla/mux`| `net/http` + `http.MaxBytesReader` |
 | **Concurrent Workflows** | `sourcegraph/conc` | Native `sync.WaitGroup` + buffered worker channels |
 

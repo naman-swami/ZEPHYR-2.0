@@ -57,7 +57,7 @@ Run-Check "Byte-identical binary builds via -trimpath" {
     if ($h1 -ne $h2) { throw "Hash mismatch: $h1 != $h2" }
 }
 
-Write-Host "`n-- STEP 3: Automated Test Suite (10 Packages) --------------" -ForegroundColor Yellow
+Write-Host "`n-- STEP 3: Automated Test Suite (11 Packages) --------------" -ForegroundColor Yellow
 
 Run-Check "Full test suite (go test ./...)" {
     $out = go test ./... 2>&1
@@ -160,12 +160,19 @@ Run-Check "zephyr profile (Kernel CPU/Mem telemetry & SVG Flame Graph)" {
     if (-not (Test-Path ".taskcache/profile/flamegraph.svg")) { throw "Missing flamegraph.svg" }
 }
 
+Write-Host "`n-- STEP 11: Chaos Gauntlet & Architectural Resilience -------" -ForegroundColor Yellow
+
+Run-Check "zephyr stress (Chaos Gauntlet & Self-Healing Audit)" {
+    $out = (& $zephyr stress 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0 -or $out -notmatch "ALL 6 STRESS SCENARIOS PASSED") { throw $out }
+}
+
 Write-Host "`n================================================================" -ForegroundColor Cyan
 Write-Host "  AUDIT RESULTS: $passCount Passed, $failCount Failed" -ForegroundColor $(if ($failCount -eq 0) { "Green" } else { "Red" })
 Write-Host "================================================================" -ForegroundColor Cyan
 
 if ($failCount -eq 0) {
-    Write-Host "`n[SUCCESS] ALL VERIFICATION CHECKS PASSED FOR ZEPHYR 2.0!`n" -ForegroundColor Green
+    Write-Host "`n[SUCCESS] ALL 17 VERIFICATION CHECKS PASSED FOR ZEPHYR 2.0!`n" -ForegroundColor Green
     exit 0
 } else {
     Write-Host "`n[WARNING] Some verification checks failed.`n" -ForegroundColor Red

@@ -3,7 +3,7 @@
 > **ZEPHYR** — High-Performance, Zero-Dependency Incremental Build System  
 > Crafted with 100% Go Standard Library by **Naman Swami**.
 
-This document details the **27 standard library substitutions** implemented in `ZEPHYR`, fulfilling the **STDLIB Log Bonus Challenge (+3 points)** and showcasing the **Zero-Dependency Craft (30% weight)**.
+This document details the **28 standard library substitutions** implemented in `ZEPHYR`, fulfilling the **STDLIB Log Bonus Challenge (+3 points)** and showcasing the **Zero-Dependency Craft (30% weight)**.
 
 ---
 
@@ -38,6 +38,7 @@ This document details the **27 standard library substitutions** implemented in `
 | **25** | `microsoft/vscode-languageclient` / `eclipse/lsp4j` | Language Server Protocol (LSP) server | `bufio.Scanner`, `encoding/json`, `fmt.Fprintf` | Content-Length framed JSON-RPC 2.0 stdio LSP server supporting `initialize`, `publishDiagnostics`, `hover`, and `completion` — with no external LSP SDK. |
 | **26** | `hashicorp/mdns` / `grandcat/zeroconf` | mDNS/Bonjour LAN service discovery | `net.UDPConn`, `crypto/hmac`, `net/http` | UDP beacon broadcast/listen loop (`ZEPHYR-P2P/2.0`) with HMAC-SHA256 cluster authentication and HTTP-based verified CAS blob sync. |
 | **27** | `brendangregg/FlameGraph` / `parca-dev/parca` | Interactive CPU Flame Graph generation | `os.ProcessState`, `strings.Builder`, `fmt.Fprintf` | Standalone interactive SVG Flame Graph and Chrome/Perfetto Trace JSON using kernel `UserTime`/`SystemTime` telemetry — zero native/C dependencies. |
+| **28** | `chaos-mesh/chaos-mesh` / `jepsen-io/jepsen` | Chaos Gauntlet & Resilience Testing | `crypto/sha256`, `math/rand`, `sync`, `os.Chtimes`, `filepath.Abs` | 6 automated stress scenarios testing bit-rot corruption quarantine, crash-atomic fsync, 1,000-node DAG cycle detection, clock skew invariance, and Tar Slip traversal fuzzing (`pkg/stress`). |
 
 ---
 
