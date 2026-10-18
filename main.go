@@ -35,6 +35,8 @@ import (
 	mcpserver "taskrunner/pkg/mcp"
 	"taskrunner/pkg/p2p"
 	"taskrunner/pkg/profile"
+	"taskrunner/pkg/prune"
+	"taskrunner/pkg/sched"
 	"taskrunner/pkg/stress"
 	"taskrunner/pkg/verify"
 )
@@ -144,6 +146,14 @@ type Task struct {
 	Shell       string   `json:"shell,omitempty"`  // "powershell", "cmd", "bash", "sh"
 	SecretKey   string   `json:"secret_key,omitempty"`
 	CleanOutput bool     `json:"clean_output,omitempty"` // Clean outputs before rerun
+	Pure        *bool    `json:"pure,omitempty"`         // Declared deterministic task (required for speculative early cutoff)
+}
+
+func (t Task) IsPure() bool {
+	if t.Pure != nil {
+		return *t.Pure
+	}
+	return len(t.Outputs) > 0
 }
 
 type TaskManifest struct {
@@ -319,21 +329,51 @@ func LoadConfig(path string) (*Config, error) {
 // SECTION 3: WORKSPACE PATH VALIDATION
 // ============================================================================
 
+var reservedDeviceNames = map[string]struct{}{
+	"CON": {}, "PRN": {}, "AUX": {}, "NUL": {},
+	"COM1": {}, "COM2": {}, "COM3": {}, "COM4": {}, "COM5": {}, "COM6": {}, "COM7": {}, "COM8": {}, "COM9": {},
+	"LPT1": {}, "LPT2": {}, "LPT3": {}, "LPT4": {}, "LPT5": {}, "LPT6": {}, "LPT7": {}, "LPT8": {}, "LPT9": {},
+}
+
 // ValidateSafePath verifies that targetPath resides within baseDir to prevent
-// directory traversal attacks.
+// directory traversal attacks, alternate data streams, and device collisions.
 // Note: This validates file paths against workspace boundaries; it does not
 // constitute an OS-level execution sandbox for child processes.
 func ValidateSafePath(baseDir, targetPath string) (string, error) {
+	if strings.ContainsRune(targetPath, 0) {
+		return "", fmt.Errorf("workspace boundary violation: null byte in path '%s'", targetPath)
+	}
+
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return "", fmt.Errorf("invalid base directory: %w", err)
 	}
 
+	// Reject Alternate Data Streams (colons in relative target path)
+	if strings.Contains(targetPath, ":") {
+		return "", fmt.Errorf("workspace boundary violation: alternate data stream or invalid colon in path '%s'", targetPath)
+	}
+
 	// Check for URL-encoded traversal (e.g. %2e%2e%2f -> ../)
 	if strings.Contains(targetPath, "%") {
 		lower := strings.ToLower(targetPath)
-		if strings.Contains(lower, "%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") {
+		if strings.Contains(lower, "%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") || strings.Contains(lower, "%00") {
 			return "", fmt.Errorf("workspace boundary violation: percent-encoded traversal sequence detected: '%s'", targetPath)
+		}
+	}
+
+	// Reject Windows reserved device names (CON, NUL, AUX, COM1, LPT1...)
+	cleanNorm := strings.ReplaceAll(targetPath, "\\", "/")
+	for _, seg := range strings.Split(cleanNorm, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			continue
+		}
+		baseName := seg
+		if idx := strings.Index(baseName, "."); idx != -1 {
+			baseName = baseName[:idx]
+		}
+		if _, isReserved := reservedDeviceNames[strings.ToUpper(baseName)]; isReserved {
+			return "", fmt.Errorf("workspace boundary violation: reserved device name '%s' in path '%s'", seg, targetPath)
 		}
 	}
 
@@ -369,6 +409,7 @@ var secretPatterns = []*regexp.Regexp{
 type RedactingWriter struct {
 	underlying io.Writer
 	mu         sync.Mutex
+	carryOver  []byte
 }
 
 func NewRedactingWriter(w io.Writer) *RedactingWriter {
@@ -379,9 +420,46 @@ func (rw *RedactingWriter) Write(p []byte) (n int, err error) {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
 
-	redacted := RedactSecrets(string(p))
-	_, err = rw.underlying.Write([]byte(redacted))
-	return len(p), err
+	const maxCarryOver = 64
+	combined := append(rw.carryOver, p...)
+	rw.carryOver = nil
+
+	if lastNL := bytes.LastIndexByte(combined, '\n'); lastNL >= 0 {
+		toEmit := combined[:lastNL+1]
+		redacted := RedactSecrets(string(toEmit))
+		if _, err := rw.underlying.Write([]byte(redacted)); err != nil {
+			return len(p), err
+		}
+		combined = combined[lastNL+1:]
+	}
+
+	if len(combined) <= maxCarryOver {
+		rw.carryOver = append([]byte(nil), combined...)
+		return len(p), nil
+	}
+
+	emitLen := len(combined) - maxCarryOver
+	toEmit := combined[:emitLen]
+	redacted := RedactSecrets(string(toEmit))
+	if _, err := rw.underlying.Write([]byte(redacted)); err != nil {
+		return len(p), err
+	}
+	rw.carryOver = append([]byte(nil), combined[emitLen:]...)
+
+	return len(p), nil
+}
+
+func (rw *RedactingWriter) Flush() error {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+
+	if len(rw.carryOver) > 0 {
+		redacted := RedactSecrets(string(rw.carryOver))
+		rw.carryOver = nil
+		_, err := rw.underlying.Write([]byte(redacted))
+		return err
+	}
+	return nil
 }
 
 func RedactSecrets(input string) string {
@@ -699,9 +777,17 @@ func GetTaskStats() *TaskStats {
 func (ts *TaskStats) Save() {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
-	_ = os.MkdirAll(filepath.Dir(StatsFilePath), 0755)
+	dir := filepath.Dir(StatsFilePath)
+	_ = os.MkdirAll(dir, 0755)
 	if data, err := json.MarshalIndent(ts.Tasks, "", "  "); err == nil {
-		_ = os.WriteFile(StatsFilePath, data, 0644)
+		tmpPath := fmt.Sprintf("%s.tmp.%d", StatsFilePath, time.Now().UnixNano())
+		if err := os.WriteFile(tmpPath, data, 0644); err == nil {
+			if err := renameWithRetry(tmpPath, StatsFilePath); err != nil {
+				_ = os.Remove(tmpPath)
+			} else {
+				_ = syncDir(dir)
+			}
+		}
 	}
 }
 
@@ -1160,6 +1246,7 @@ func ComputeTaskHash(
 	hasher.Write([]byte("command:" + task.Command + "\n"))
 	hasher.Write([]byte("cwd:" + task.Cwd + "\n"))
 	hasher.Write([]byte("shell:" + task.Shell + "\n"))
+	hasher.Write([]byte(fmt.Sprintf("pure:%t\n", task.IsPure())))
 
 	var fileKeys []string
 	for k := range fileHashes {
@@ -1231,6 +1318,39 @@ func (cas *CASStore) BlobPath(sha256Hex string) string {
 	return filepath.Join(cas.rootDir, sha256Hex[0:2], sha256Hex[2:])
 }
 
+func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	_ = d.Sync()
+	return nil
+}
+
+func renameWithRetry(src, dst string) error {
+	var lastErr error
+	for attempt := 0; attempt < 8; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(1<<attempt) * 5 * time.Millisecond) // 10..320ms exponential backoff
+		}
+		if err := os.Rename(src, dst); err == nil {
+			return nil
+		} else {
+			lastErr = err
+			if _, statErr := os.Stat(dst); statErr == nil {
+				if _, srcErr := os.Stat(src); os.IsNotExist(srcErr) {
+					return nil
+				}
+			}
+		}
+	}
+	return lastErr
+}
+
 func (cas *CASStore) StoreBlob(srcPath string) (string, error) {
 	cas.mu.Lock()
 	defer cas.mu.Unlock()
@@ -1271,13 +1391,19 @@ func (cas *CASStore) StoreBlob(srcPath string) (string, error) {
 		_ = os.Remove(tmpPath)
 		return "", err
 	}
-	_ = tmpFile.Sync()
-	tmpFile.Close()
-
-	if err := os.Rename(tmpPath, targetPath); err != nil {
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
 		_ = os.Remove(tmpPath)
 		return "", err
 	}
+	tmpFile.Close()
+
+	if err := renameWithRetry(tmpPath, targetPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
+
+	_ = syncDir(shardDir)
 
 	return hash, nil
 }
@@ -1288,10 +1414,40 @@ func (cas *CASStore) RestoreBlob(hash, destPath string) error {
 	cas.mu.RLock()
 	defer cas.mu.RUnlock()
 
+	if strings.ContainsRune(destPath, 0) {
+		return fmt.Errorf("workspace boundary violation: null byte in restore path '%s'", destPath)
+	}
+
+	// Boundary check: relative paths must stay within workspace
+	if !filepath.IsAbs(destPath) && filepath.VolumeName(destPath) == "" {
+		if _, err := ValidateSafePath(".", destPath); err != nil {
+			return fmt.Errorf("restore destination path boundary violation: %w", err)
+		}
+	} else {
+		// For absolute paths, verify against Alternate Data Streams and Windows reserved device names
+		cleanNorm := strings.ReplaceAll(destPath[len(filepath.VolumeName(destPath)):], "\\", "/")
+		if strings.Contains(cleanNorm, ":") {
+			return fmt.Errorf("workspace boundary violation: alternate data stream in restore path '%s'", destPath)
+		}
+		for _, seg := range strings.Split(cleanNorm, "/") {
+			baseName := seg
+			if idx := strings.Index(baseName, "."); idx != -1 {
+				baseName = baseName[:idx]
+			}
+			if _, isReserved := reservedDeviceNames[strings.ToUpper(baseName)]; isReserved {
+				return fmt.Errorf("workspace boundary violation: reserved device name in restore path '%s'", destPath)
+			}
+		}
+	}
+
 	blobPath := cas.BlobPath(hash)
 	if _, err := os.Stat(blobPath); err != nil {
 		return fmt.Errorf("CAS object '%s' not found: %w", hash, err)
 	}
+
+	// LRU recency tracking: touch mtime on restore
+	now := time.Now()
+	_ = os.Chtimes(blobPath, now, now)
 
 	// Verify-on-Read: Verify that the cached blob content hasn't suffered bit rot or tampering
 	computedHash, err := ComputeFileHash(blobPath)
@@ -1311,7 +1467,7 @@ func (cas *CASStore) RestoreBlob(hash, destPath string) error {
 		return nil
 	}
 
-	// Fallback: streaming copy for cross-filesystem or permission failures
+	// Fallback: streaming copy with live SHA-256 stream verification
 	srcFile, err := os.Open(blobPath)
 	if err != nil {
 		return err
@@ -1324,16 +1480,32 @@ func (cas *CASStore) RestoreBlob(hash, destPath string) error {
 	}
 	defer destFile.Close()
 
+	hasher := sha256.New()
+	mw := io.MultiWriter(destFile, hasher)
+
 	buf := make([]byte, 64*1024)
-	if _, err := io.CopyBuffer(destFile, srcFile, buf); err != nil {
+	if _, err := io.CopyBuffer(mw, srcFile, buf); err != nil {
+		_ = os.Remove(destPath)
 		return err
 	}
-	_ = destFile.Sync()
+	if err := destFile.Sync(); err != nil {
+		_ = os.Remove(destPath)
+		return err
+	}
+
+	if streamHash := hex.EncodeToString(hasher.Sum(nil)); streamHash != hash {
+		_ = os.Remove(destPath)
+		return fmt.Errorf("%w: stream verification failed on copy restore: expected %s, got %s", ErrCorruptedBlob, hash, streamHash)
+	}
+
 	return nil
 }
 
 func StoreOutputBlobs(cas *CASStore, outputHashes map[string]string) error {
 	for file := range outputHashes {
+		if _, err := ValidateSafePath(".", file); err != nil {
+			return fmt.Errorf("security violation: output artifact path '%s' escapes workspace: %w", file, err)
+		}
 		if _, err := cas.StoreBlob(file); err != nil {
 			return err
 		}
@@ -1343,6 +1515,9 @@ func StoreOutputBlobs(cas *CASStore, outputHashes map[string]string) error {
 
 func RestoreOutputBlobs(cas *CASStore, outputHashes map[string]string) error {
 	for file, hash := range outputHashes {
+		if _, err := ValidateSafePath(".", file); err != nil {
+			return fmt.Errorf("security violation: output artifact path '%s' escapes workspace: %w", file, err)
+		}
 		if err := cas.RestoreBlob(hash, file); err != nil {
 			return err
 		}
@@ -1539,6 +1714,9 @@ func (t *LiveProgressTracker) FinishTask(name, status string, dur time.Duration)
 // SECTION 13: PROCESS EXECUTION & RETRY CONTROLLER
 // ============================================================================
 
+// globalSpawnLimiter caps subprocess spawn rates to 50/sec with burst 200 to prevent fork storms.
+var globalSpawnLimiter = sched.NewTokenBucket(50, 200)
+
 type TaskLogger struct {
 	mu sync.Mutex
 }
@@ -1724,6 +1902,14 @@ func ExecuteTask(
 		redactedStdout := NewRedactingWriter(&stdoutBuf)
 		redactedStderr := NewRedactingWriter(&stderrBuf)
 
+		if err := globalSpawnLimiter.Wait(cmdCtx); err != nil {
+			if cancel != nil {
+				cancel()
+			}
+			lastErr = err
+			continue
+		}
+
 		startTime := time.Now()
 
 		if stream {
@@ -1771,6 +1957,9 @@ func ExecuteTask(
 				cancel()
 			}
 		}
+
+		_ = redactedStdout.Flush()
+		_ = redactedStderr.Flush()
 
 		duration := time.Since(startTime)
 		exitCode := 0
@@ -1828,7 +2017,9 @@ func ExecuteTask(
 			entryData, _ := json.Marshal(entry)
 			tmpCachePath := fmt.Sprintf("%s.tmp.%d", actionCachePath, time.Now().UnixNano())
 			if err := os.WriteFile(tmpCachePath, entryData, 0644); err == nil {
-				_ = os.Rename(tmpCachePath, actionCachePath)
+				if err := renameWithRetry(tmpCachePath, actionCachePath); err != nil {
+					_ = os.Remove(tmpCachePath)
+				}
 			}
 
 			// Generate SLSA v1.0 Provenance Attestation
@@ -1848,18 +2039,20 @@ func ExecuteTask(
 			// mark EarlyCutoff=true so downstream tasks that consume these outputs can remain CACHED.
 			manifestPath := filepath.Join(CacheDir, task.Name+".manifest.json")
 			earlyCutoff := false
-			if prevData, err := os.ReadFile(manifestPath); err == nil {
-				var prev TaskManifest
-				if json.Unmarshal(prevData, &prev) == nil && len(outputHashes) > 0 && len(prev.OutputHashes) == len(outputHashes) {
-					matches := true
-					for file, h := range outputHashes {
-						if prevH, ok := prev.OutputHashes[file]; !ok || prevH != h {
-							matches = false
-							break
+			if task.IsPure() {
+				if prevData, err := os.ReadFile(manifestPath); err == nil {
+					var prev TaskManifest
+					if json.Unmarshal(prevData, &prev) == nil && len(outputHashes) > 0 && len(prev.OutputHashes) == len(outputHashes) {
+						matches := true
+						for file, h := range outputHashes {
+							if prevH, ok := prev.OutputHashes[file]; !ok || prevH != h {
+								matches = false
+								break
+							}
 						}
-					}
-					if matches {
-						earlyCutoff = true
+						if matches {
+							earlyCutoff = true
+						}
 					}
 				}
 			}
@@ -1874,7 +2067,12 @@ func ExecuteTask(
 				Timestamp:    time.Now(),
 			}
 			if mData, err := json.MarshalIndent(currManifest, "", "  "); err == nil {
-				_ = os.WriteFile(manifestPath, mData, 0644)
+				tmpManifest := fmt.Sprintf("%s.tmp.%d", manifestPath, time.Now().UnixNano())
+				if err := os.WriteFile(tmpManifest, mData, 0644); err == nil {
+					if err := renameWithRetry(tmpManifest, manifestPath); err != nil {
+						_ = os.Remove(tmpManifest)
+					}
+				}
 			}
 
 			if earlyCutoff {
@@ -2021,7 +2219,7 @@ func RunPipeline(
 				// identical to the previous build, downstream tasks' taskHash remains unchanged,
 				// allowing them to remain CACHED without unnecessary rebuilds.
 				depToken := taskHash
-				if result.OutputDigest != "" {
+				if t.IsPure() && result.OutputDigest != "" {
 					depToken = "out:" + result.OutputDigest
 				}
 
@@ -2184,6 +2382,7 @@ func (s *RemoteCacheServer) Start() error {
 	mux.HandleFunc("/v1/ac/", s.authMiddleware(s.handleActionCache))
 	mux.HandleFunc("/v1/cas/", s.authMiddleware(s.handleCAS))
 	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.Handle("/metrics", sched.NewMetrics())
 
 	host := s.host
 	if host == "" {
@@ -2663,79 +2862,59 @@ func CleanCache(maxAge time.Duration, maxSize int64) error {
 		return nil
 	}
 
-	type fileInfo struct {
-		path     string
-		size     int64
-		lastUsed time.Time
-	}
-
-	var files []fileInfo
-	var totalSize int64
-
-	_ = filepath.WalkDir(CacheDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-
-		lastUsed := info.ModTime()
-		if strings.HasSuffix(path, ".json") {
-			if data, err := os.ReadFile(path); err == nil {
-				var entry CacheEntry
-				if json.Unmarshal(data, &entry) == nil && !entry.LastUsed.IsZero() {
-					lastUsed = entry.LastUsed
-				}
-			}
-		}
-
-		files = append(files, fileInfo{
-			path:     path,
-			size:     info.Size(),
-			lastUsed: lastUsed,
-		})
-		totalSize += info.Size()
-		return nil
-	})
-
-	now := time.Now()
-	purgedCount := 0
-
-	if maxAge > 0 {
-		for _, f := range files {
-			if now.Sub(f.lastUsed) > maxAge {
-				_ = os.Remove(f.path)
-				purgedCount++
-			}
-		}
-	}
-
-	if maxSize > 0 && totalSize > maxSize {
-		sort.Slice(files, func(i, j int) bool {
-			return files[i].lastUsed.Before(files[j].lastUsed)
-		})
-
-		for _, f := range files {
-			if totalSize <= maxSize {
-				break
-			}
-			if err := os.Remove(f.path); err == nil {
-				totalSize -= f.size
-				purgedCount++
-			}
-		}
-	}
-
 	if maxAge == 0 && maxSize == 0 {
 		_ = os.RemoveAll(CacheDir)
 		fmt.Println("Cleaned entire task cache.")
 		return nil
 	}
 
-	fmt.Printf("Cleaned %d cache entries matching policy.\n", purgedCount)
+	purgedManifests := 0
+	if maxAge > 0 {
+		now := time.Now()
+		_ = filepath.WalkDir(CacheDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if strings.HasSuffix(d.Name(), ".json") && d.Name() != "stats.json" {
+				if info, err := d.Info(); err == nil {
+					if now.Sub(info.ModTime()) > maxAge {
+						_ = os.Remove(path)
+						purgedManifests++
+					}
+				}
+			}
+			return nil
+		})
+	}
+
+	pruner := prune.NewPruner(CacheDir, nil)
+	stats, err := pruner.Prune(context.Background(), prune.PruneOptions{
+		MaxSizeBytes: maxSize,
+		MaxAge:       maxAge,
+		Headroom:     0.10,
+		Emergency:    false,
+	})
+	if err != nil {
+		return err
+	}
+
+	totalPurged := purgedManifests + stats.BlobsEvicted
+	fmt.Printf("Cleaned %d cache entries matching policy (evicted %d unreferenced blobs, freed %s).\n",
+		totalPurged, stats.BlobsEvicted, formatBytes(stats.BytesEvicted))
 	return nil
+}
+
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func truncateHash(hash string) string {
@@ -2747,21 +2926,24 @@ func truncateHash(hash string) string {
 
 func parseByteSize(s string) (int64, error) {
 	s = strings.ToUpper(strings.TrimSpace(s))
-	multipliers := map[string]int64{
-		"KB": 1024,
-		"MB": 1024 * 1024,
-		"GB": 1024 * 1024 * 1024,
-		"B":  1,
+	units := []struct {
+		suffix string
+		mul    int64
+	}{
+		{"GB", 1024 * 1024 * 1024},
+		{"MB", 1024 * 1024},
+		{"KB", 1024},
+		{"B", 1},
 	}
 
-	for suffix, mul := range multipliers {
-		if strings.HasSuffix(s, suffix) {
-			numStr := strings.TrimSpace(strings.TrimSuffix(s, suffix))
+	for _, u := range units {
+		if strings.HasSuffix(s, u.suffix) {
+			numStr := strings.TrimSpace(strings.TrimSuffix(s, u.suffix))
 			val, err := strconv.ParseInt(numStr, 10, 64)
 			if err != nil {
 				return 0, err
 			}
-			return val * mul, nil
+			return val * u.mul, nil
 		}
 	}
 
@@ -2943,7 +3125,7 @@ func printUsage() {
 	fmt.Println("  stress                Chaos Gauntlet: 6 automated stress & self-healing resilience tests")
 	fmt.Println("  list                  Display configured tasks in formatted table")
 	fmt.Println("  graph                 Render dependency graph (ASCII or Mermaid)")
-	fmt.Println("  clean                 Purge cache entries by age, size, or all")
+	fmt.Println("  prune, clean          Crash-safe LRU cache pruning by size, age, or referential mark/sweep")
 	fmt.Println("  version               Display version and platform info")
 	fmt.Println("  help                  Display this usage guide")
 	fmt.Println("\nRun Flags:")
@@ -3235,8 +3417,8 @@ func main() {
 			fmt.Println(GenerateASCIIGraph(cfg))
 		}
 
-	case "clean":
-		fs := flag.NewFlagSet("clean", flag.ExitOnError)
+	case "clean", "prune":
+		fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 		maxAgeStr := fs.String("max-age", "", "Purge entries older than duration (e.g. 72h, 7d)")
 		maxSizeStr := fs.String("max-size", "", "LRU purge entries exceeding size budget (e.g. 2GB, 500MB)")
 		fs.Parse(args)
@@ -4059,7 +4241,7 @@ func main() {
 		printUsage()
 
 	default:
-		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "lsp", "p2p", "profile", "bench", "stress", "watch", "doctor", "affected", "server", "list", "graph", "clean", "version", "help"})
+		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "lsp", "p2p", "profile", "bench", "stress", "watch", "doctor", "affected", "server", "list", "graph", "clean", "prune", "version", "help"})
 		fmt.Fprintf(os.Stderr, "%sUnknown command '%s'.%s", ColorRed, cmd, ColorReset)
 		if len(suggestions) > 0 {
 			fmt.Fprintf(os.Stderr, " Did you mean: '%s'?", strings.Join(suggestions, "', '"))

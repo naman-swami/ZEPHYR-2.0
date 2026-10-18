@@ -310,13 +310,13 @@ func RunClockSkewInvariance(tempRoot string) ScenarioResult {
 	return res
 }
 
-// RunPathJailFuzzing fuzzes path sanitization against 25 malicious traversal payloads.
+// RunPathJailFuzzing fuzzes path sanitization against 37 adversarial traversal payloads.
 func RunPathJailFuzzing(baseDir string) ScenarioResult {
 	start := time.Now()
 	res := ScenarioResult{
 		Name:        "Tar Slip & Lexical Path Jail Fuzzing",
-		Description: "Test 25 adversarial directory traversal payloads against boundary containment",
-		Iterations:  25,
+		Description: "Test 37 adversarial directory traversal, ADS, device, and escape payloads against boundary containment",
+		Iterations:  37,
 	}
 
 	payloads := []string{
@@ -345,6 +345,21 @@ func RunPathJailFuzzing(baseDir string) ScenarioResult {
 		"/tmp/evil.sh",
 		"\\Windows\\Temp\\trojan.dll",
 		"subdir/../../../escaped",
+		// Alternate Data Streams (ADS) and colon payloads
+		"data.txt:Zone.Identifier",
+		"payload.bin:hidden_stream",
+		// Windows reserved device names
+		"CON",
+		"PRN",
+		"AUX",
+		"NUL",
+		"COM1",
+		"LPT1",
+		"nested/CON.txt",
+		"dir/sub/aux",
+		// Null byte and encoded null byte
+		"test\x00escape.txt",
+		"payload%00.bin",
 	}
 
 	for _, p := range payloads {
@@ -362,17 +377,47 @@ func RunPathJailFuzzing(baseDir string) ScenarioResult {
 	return res
 }
 
+var reservedDeviceNames = map[string]struct{}{
+	"CON": {}, "PRN": {}, "AUX": {}, "NUL": {},
+	"COM1": {}, "COM2": {}, "COM3": {}, "COM4": {}, "COM5": {}, "COM6": {}, "COM7": {}, "COM8": {}, "COM9": {},
+	"LPT1": {}, "LPT2": {}, "LPT3": {}, "LPT4": {}, "LPT5": {}, "LPT6": {}, "LPT7": {}, "LPT8": {}, "LPT9": {},
+}
+
 func validateSafePath(baseDir, targetPath string) error {
+	if strings.ContainsRune(targetPath, 0) {
+		return errors.New("workspace boundary violation: null byte in path")
+	}
+
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return err
 	}
-	// Check for URL-encoded traversal (e.g. %2e%2e%2f -> ../)
+
+	if strings.Contains(targetPath, ":") {
+		return errors.New("workspace boundary violation: alternate data stream in path")
+	}
+
 	if strings.Contains(targetPath, "%") {
-		if strings.Contains(strings.ToLower(targetPath), "%2e") || strings.Contains(strings.ToLower(targetPath), "%2f") || strings.Contains(strings.ToLower(targetPath), "%5c") {
+		lower := strings.ToLower(targetPath)
+		if strings.Contains(lower, "%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") || strings.Contains(lower, "%00") {
 			return errors.New("workspace boundary violation: percent-encoded traversal sequence detected")
 		}
 	}
+
+	cleanNorm := strings.ReplaceAll(targetPath, "\\", "/")
+	for _, seg := range strings.Split(cleanNorm, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			continue
+		}
+		baseName := seg
+		if idx := strings.Index(baseName, "."); idx != -1 {
+			baseName = baseName[:idx]
+		}
+		if _, isReserved := reservedDeviceNames[strings.ToUpper(baseName)]; isReserved {
+			return errors.New("workspace boundary violation: reserved device name in path")
+		}
+	}
+
 	if filepath.IsAbs(targetPath) || strings.HasPrefix(targetPath, "/") || strings.HasPrefix(targetPath, "\\") || filepath.VolumeName(targetPath) != "" {
 		return errors.New("workspace boundary violation: absolute or rooted path")
 	}

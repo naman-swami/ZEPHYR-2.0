@@ -178,7 +178,9 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 
 		resp := s.dispatch(ctx, &req)
-		_ = enc.Encode(resp)
+		if req.ID != nil {
+			_ = enc.Encode(resp)
+		}
 	}
 }
 
@@ -194,10 +196,9 @@ func (s *Server) dispatch(ctx context.Context, req *Request) Response {
 			ServerInfo:      ServerInfo{Name: "zephyr-mcp", Version: "2.0.0"},
 		}
 
-	case "initialized":
-		// Notification — no response needed, but we still need to return something
-		// when called from dispatch; caller ignores it if ID is nil.
-		base.Result = map[string]string{}
+	case "initialized", "notifications/cancelled":
+		// Standard JSON-RPC notification — no response sent to client
+		return base
 
 	case "tools/list":
 		base.Result = map[string]interface{}{

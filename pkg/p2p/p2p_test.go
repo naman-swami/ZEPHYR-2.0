@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestP2PSync_ValidAndTamperedBlobs(t *testing.T) {
@@ -74,7 +75,7 @@ func TestBeaconHMACVerification(t *testing.T) {
 		Protocol:  "ZEPHYR-P2P/2.0",
 		NodeID:    "workstation-01",
 		HTTPAddr:  "192.168.1.42:9090",
-		Timestamp: 1700000000,
+		Timestamp: time.Now().Unix(),
 	}
 	b.Signature = SignBeacon(b, "team-key")
 
@@ -83,5 +84,13 @@ func TestBeaconHMACVerification(t *testing.T) {
 	}
 	if VerifyBeacon(b, "wrong-key") {
 		t.Errorf("expected wrong cluster key to reject beacon")
+	}
+
+	// Verify replay attack protection: expired beacon must fail verification
+	expiredBeacon := b
+	expiredBeacon.Timestamp = time.Now().Unix() - 120 // 2 minutes in past
+	expiredBeacon.Signature = SignBeacon(expiredBeacon, "team-key")
+	if VerifyBeacon(expiredBeacon, "team-key") {
+		t.Errorf("expected expired beacon to be rejected by replay protection")
 	}
 }

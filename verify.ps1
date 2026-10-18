@@ -57,7 +57,7 @@ Run-Check "Byte-identical binary builds via -trimpath" {
     if ($h1 -ne $h2) { throw "Hash mismatch: $h1 != $h2" }
 }
 
-Write-Host "`n-- STEP 3: Automated Test Suite (11 Packages) --------------" -ForegroundColor Yellow
+Write-Host "`n-- STEP 3: Automated Test Suite (13 Packages) --------------" -ForegroundColor Yellow
 
 Run-Check "Full test suite (go test ./...)" {
     $out = go test ./... 2>&1

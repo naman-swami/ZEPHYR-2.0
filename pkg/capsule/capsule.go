@@ -22,6 +22,12 @@ const (
 	ManifestFileName      = "capsule.json"
 )
 
+var reservedDeviceNames = map[string]struct{}{
+	"CON": {}, "PRN": {}, "AUX": {}, "NUL": {},
+	"COM1": {}, "COM2": {}, "COM3": {}, "COM4": {}, "COM5": {}, "COM6": {}, "COM7": {}, "COM8": {}, "COM9": {},
+	"LPT1": {}, "LPT2": {}, "LPT3": {}, "LPT4": {}, "LPT5": {}, "LPT6": {}, "LPT7": {}, "LPT8": {}, "LPT9": {},
+}
+
 // Manifest holds full build event metadata, inputs, outputs, toolchain, provenance, and digital signatures.
 type Manifest struct {
 	CapsuleVersion string            `json:"capsule_version"`
@@ -451,6 +457,7 @@ func Replay(archivePath string, targetDir string) (*ReplayResult, error) {
 		VerifiedMatch: true,
 	}
 
+	seenCaseInsensitive := make(map[string]bool)
 	tr := tar.NewReader(gr)
 	for {
 		header, err := tr.Next()
@@ -464,11 +471,56 @@ func Replay(archivePath string, targetDir string) (*ReplayResult, error) {
 		if strings.HasPrefix(header.Name, "artifacts/") {
 			rawRel := strings.TrimPrefix(header.Name, "artifacts/")
 
+			// Reject non-regular entries (symlinks, hardlinks, FIFOs, character/block devices)
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+				return nil, fmt.Errorf("security violation: capsule contains unsupported/unsafe archive entry type %v for '%s'", header.Typeflag, rawRel)
+			}
+
+			// Reject null bytes
+			if strings.ContainsRune(rawRel, 0) {
+				return nil, fmt.Errorf("security violation: null byte in artifact path '%s'", rawRel)
+			}
+
+			// Reject Alternate Data Streams (colons)
+			if strings.Contains(rawRel, ":") {
+				return nil, fmt.Errorf("security violation: alternate data stream in artifact path '%s'", rawRel)
+			}
+
+			// Reject percent-encoded traversal
+			if strings.Contains(rawRel, "%") {
+				lower := strings.ToLower(rawRel)
+				if strings.Contains(lower, "%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") || strings.Contains(lower, "%00") {
+					return nil, fmt.Errorf("security violation: percent-encoded traversal sequence in '%s'", rawRel)
+				}
+			}
+
+			// Reject Windows reserved device names
+			cleanNorm := strings.ReplaceAll(rawRel, "\\", "/")
+			for _, seg := range strings.Split(cleanNorm, "/") {
+				if seg == "" || seg == "." || seg == ".." {
+					continue
+				}
+				baseName := seg
+				if idx := strings.Index(baseName, "."); idx != -1 {
+					baseName = baseName[:idx]
+				}
+				if _, isReserved := reservedDeviceNames[strings.ToUpper(baseName)]; isReserved {
+					return nil, fmt.Errorf("security violation: reserved device name '%s' in artifact path '%s'", seg, rawRel)
+				}
+			}
+
 			// CRITICAL SECURITY JAIL: Prevent Zip Slip / Tar Slip directory traversal
 			cleanRel := filepath.Clean(filepath.FromSlash(rawRel))
 			if strings.HasPrefix(cleanRel, "..") || filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, string(filepath.Separator)) {
 				return nil, fmt.Errorf("security violation: capsule contains illegal path traversal artifact '%s'", rawRel)
 			}
+
+			// Prevent case-insensitive filesystem collisions
+			ciKey := strings.ToLower(cleanRel)
+			if seenCaseInsensitive[ciKey] {
+				return nil, fmt.Errorf("security violation: case-insensitive path collision detected for '%s'", cleanRel)
+			}
+			seenCaseInsensitive[ciKey] = true
 
 			destPath := filepath.Join(targetAbs, cleanRel)
 			relToTarget, err := filepath.Rel(targetAbs, destPath)

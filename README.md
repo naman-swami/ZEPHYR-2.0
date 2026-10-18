@@ -61,6 +61,9 @@
    - [7.3 Dynamic Critical Path Method (CPM) Priority Scheduling](#73-dynamic-critical-path-method-cpm-priority-scheduling)
    - [7.4 Speculative Early Cutoff (Hash-Invariant Pruning)](#74-speculative-early-cutoff-hash-invariant-pruning)
    - [7.5 Process Tree Termination on Windows and Unix](#75-process-tree-termination-on-windows-and-unix)
+   - [7.6 Enterprise Cache Pruning & Crash-Safe Eviction (`pkg/prune`)](#76-enterprise-cache-pruning--crash-safe-eviction-pkgprune)
+   - [7.7 Hardened Worker Pool & Process Admission Governor (`pkg/sched`)](#77-hardened-worker-pool--process-admission-governor-pkgsched)
+   - [7.8 Supply Chain Provenance & DSSE Envelopes (`pkg/capsule/dsse.go`)](#78-supply-chain-provenance--dsse-envelopes-pkgcapsuledssego)
 8. [Empirical Benchmarks & Performance](#8-empirical-benchmarks--performance)
 9. [Security & Supply-Chain Governance](#9-security--supply-chain-governance)
 10. [Automated Testing & Verification Suites](#10-automated-testing--verification-suites)
@@ -694,7 +697,7 @@ zephyr stress
 [SCENARIO 4/6] Clock Skew & Mtime Mutation Invariance...
   [PASS] Hashes 100% invariant across 1970, 2026, and 2038 timestamps.
 [SCENARIO 5/6] Tar Slip & Lexical Path Jail Fuzzing...
-  [PASS] 25/25 traversal payloads blocked by jail.
+  [PASS] 37/37 traversal payloads blocked by jail.
 [SCENARIO 6/6] Multithreaded CAS Race Stress...
   [PASS] 20 concurrent workers completed 100 operations with 0 races.
 
@@ -723,17 +726,17 @@ zephyr [command] [flags...] [targets...] [-- pass-through-arguments...]
 | `adopt` | Zero-config project discovery and `tasks.json` generation | `zephyr adopt --write` | `--write` (commit to disk), `--force` (overwrite), `--dir <path>` |
 | `affected` | Execute only tasks affected by Git diff | `zephyr affected --base=main` | `--base <branch>`, `--staged`, `--untracked` |
 | `verify` | Hermetic reproducibility auditor across clean sandboxes | `zephyr verify <target>` | `--runs <N>` (default 2), `--timeout <dur>` |
-| `capsule` | Ed25519 cryptographic Build Capsule lifecycle | `zephyr capsule <action>` | Subcommands: `keygen`, `create`, `verify`, `replay` |
+| `capsule` | Ed25519 cryptographic Build Capsule lifecycle & DSSE provenance | `zephyr capsule <action>` | Subcommands: `keygen`, `create`, `verify`, `replay` |
 | `agent` | Machine-readable AI Agent semantic control interface | `zephyr agent <action>` | Subcommands: `graph`, `affected`, `verify`, `run` (`--allow-exec`) |
 | `mcp` | Start native Model Context Protocol (MCP) stdio server | `zephyr mcp` | JSON-RPC 2.0 over stdio for Cursor, Claude Code, OpenHands |
 | `lsp` | Native Language Server Protocol (LSP) for IDEs | `zephyr lsp [--check]` | `--check` (CLI static analysis), `--config <path>` |
 | `p2p` | Peer-to-Peer LAN cache discovery & verified sync | `zephyr p2p <action>` | Subcommands: `status`, `discover`, `serve`, `sync` (`--peer`, `--key`) |
 | `profile` | Kernel CPU/memory profiler & SVG Flame Graph generator | `zephyr profile [targets...]` | `--svg <path>`, `--trace <path>`, `--config <path>` |
-| `server` | Hardened Remote HTTP Cache Server | `zephyr server --port 8080` | `--port <N>`, `--token <secret>`, `--dir <path>`, `--allow-unauthenticated` |
+| `server` | Hardened Remote HTTP Cache Server with Prometheus /metrics | `zephyr server --port 8080` | `--port <N>`, `--token <secret>`, `--dir <path>`, `--allow-unauthenticated` |
 | `graph` | Visualize pipeline dependency tree | `zephyr graph` | `--format <ascii\|mermaid>` |
 | `list` | Print declared tasks and metadata | `zephyr list` | `--json` |
 | `bench` | Empirical multi-trial performance distribution runner | `zephyr bench` | Evaluates cold, warm cache, incremental, and capsule replay |
-| `clean` | Purge cached objects from `.taskcache` | `zephyr clean` | `--all`, `--max-age <dur>`, `--max-size <bytes\|MB\|GB>` |
+| `prune` / `clean` | Crash-safe LRU cache pruning with referential integrity | `zephyr prune` / `zephyr clean` | `--all`, `--max-age <dur>`, `--max-size <bytes\|MB\|GB>` |
 | `version` | Print binary version, architecture, and author info | `zephyr version` | N/A |
 | `help` | Print built-in CLI help guide | `zephyr help [command]` | N/A |
 
@@ -901,6 +904,32 @@ ZEPHYR solves this using:
 * `cmd.Cancel`: Invokes `taskkill /F /T /PID` on Windows or `syscall.Kill(-pgid, syscall.SIGKILL)` on Unix.
 * `cmd.WaitDelay`: Configured with a 2-second grace period to forcefully reap hung pipes.
 
+### 7.6. Enterprise Cache Pruning & Crash-Safe Eviction (`pkg/prune`)
+Deleting from a content-addressable cache is notoriously prone to race conditions: evicting by raw LRU can delete a shared blob that an active task manifest still references, corrupting running pipelines.
+
+ZEPHYR solves this via a two-phase mark-and-sweep eviction engine in `pkg/prune`:
+* **Referential Integrity**: Scans all active task manifests under read lock before deleting any CAS blob. Any blob referenced by an active manifest is marked live and preserved.
+* **Anti-Thrashing Headroom**: Evicts until 10% disk headroom below the target threshold is reached, preventing continuous thrashing loops.
+* **In-Flight Grace Period**: Protects newly admitted blobs with a 15-minute `PruneGrace` window, ensuring concurrent builds never have inputs pulled from underneath them.
+
+### 7.7. Hardened Worker Pool & Process Admission Governor (`pkg/sched`)
+Wide fan-out builds (e.g. 50 parallel compilation jobs) can exhaust the OS process table, spike CPU load, and trigger OOM killer panics.
+
+ZEPHYR's scheduler in `pkg/sched` introduces multi-layered admission control:
+* **Token Bucket Spawn-Rate Limiter**: Limits process creation to 50 spawns/second with burst 200, smoothing out fork storms.
+* **cgroup-Aware Memory Governor**: Inspects Linux cgroup v2 (`memory.max`), cgroup v1, and `/proc/meminfo` before scheduling memory-intensive tasks.
+* **Aging-Aware Priority Queue**: Dynamically elevates the effective priority of older queued tasks: $\text{Priority}_{\text{eff}} = \text{CP} + 0.05 \times \Delta t_{\text{wait}}$, guaranteeing zero starvation for low-criticality tasks.
+* **Prometheus & OTLP Telemetry**: Native HTTP exposition of Prometheus metrics at `/metrics` without third-party libraries.
+
+### 7.8. Supply Chain Provenance & DSSE Envelopes (`pkg/capsule/dsse.go`)
+Artifact hashes ensure integrity, but cannot establish publisher authenticity or audit provenance across zero-trust CI/CD environments.
+
+ZEPHYR's Build Capsules now package cryptographic supply chain attestations:
+* **SLSA Provenance v1 Predicates**: Captures builder identity, build definition, external parameters, and input material hashes.
+* **In-toto Statement v1 & Canonical JSON**: Serializes statements using deterministic Canonical JSON (RFC 8785 subset) with stdlib `json.Number`.
+* **DSSE Envelope with PAE**: Encapsulates statements in Dead Simple Signing Envelopes with Pre-Authentication Encoding (`PAE`), preventing cryptographic canonicalization attacks.
+* **Ed25519 Key Ring with Rotation**: Verifies signatures with asymmetric public keys and tracks revoked keys to securely deprecate compromised infrastructure.
+
 ---
 
 ## 8. Empirical Benchmarks & Performance
@@ -970,10 +999,28 @@ Suite 14: Monorepo Cross-Package Circularity        PASS   0.43s           0
 Total Suites: 14 | Passed: 14 | Failed: 0 (100% Pass)
 ```
 
-### 10.3. Go Standard Package Tests
+### 10.3. Go Standard Package Tests (13 Internal Packages)
+Runs 100% unit and integration tests across all 13 internal modular packages:
+
 ```bash
 go test -v ./...
 ```
+
+| Package | Responsibility | Go Stdlib Subsystems Used |
+| :--- | :--- | :--- |
+| `taskrunner` (root) | Core DAG orchestration, 2-tier CAS, CLI dispatcher, why diagnostics | `os/exec`, `sync`, `crypto/sha256`, `context` |
+| `pkg/adopt` | Polyglot project discovery (Go, Node, Rust, Python, Make) | `encoding/json`, `os`, `path/filepath`, `bufio` |
+| `pkg/agent` | Structured JSON-RPC CLI for AI coding agents | `encoding/json`, `os`, `bytes` |
+| `pkg/bench` | Multi-trial statistical performance & distribution benchmark | `time`, `math`, `sync`, `os/exec` |
+| `pkg/capsule` | Build Capsules (`.zcap`), Tar Slip path jail, DSSE & SLSA v1 provenance | `archive/tar`, `crypto/ed25519`, `encoding/json` |
+| `pkg/lsp` | Native Language Server Protocol (LSP 3.17) stdio server | `bufio`, `encoding/json`, `io`, `net` |
+| `pkg/mcp` | Model Context Protocol (MCP) server for IDE assistants | `bufio`, `encoding/json`, `os` |
+| `pkg/p2p` | UDP multicast discovery & verified LAN CAS sync | `net`, `crypto/sha256`, `sync` |
+| `pkg/profile` | Kernel CPU/memory profiler & interactive SVG Flame Graph generator | `runtime`, `time`, `strings`, `fmt` |
+| `pkg/prune` | Two-phase mark & sweep cache pruner with referential integrity | `os`, `path/filepath`, `sync`, `time` |
+| `pkg/sched` | Token bucket rate limiter, cgroup memory governor, CPM heap, Prometheus | `net/http`, `sync/atomic`, `container/heap` |
+| `pkg/stress` | Chaos Gauntlet: 6 automated extreme stress & resilience scenarios | `os`, `time`, `crypto/sha256`, `sync` |
+| `pkg/verify` | Double-run reproducibility auditor with byte-level offset diffing | `os`, `os/exec`, `bytes`, `crypto/sha256` |
 
 ---
 
@@ -994,7 +1041,10 @@ go test -v ./...
 | **Downstream Invalidation**| Full blind rebuild | Full blind rebuild| Full rebuild | **Speculative Early Cutoff** |
 | **Cache-Miss Diagnostics** | Basic | Verbose diff | None | **Intelligent `--why` Explanations** |
 | **Stream Secrets Masking** | None | None | None | **Live Stream Redaction (`***REDACTED***`)** |
-| **Supply-Chain Attestation**| Custom JSON | None | None | **SLSA v1.0 Provenance Attestations** |
+| **Cache Pruning Engine** | Naive size deletion | None | None | **Crash-Safe 2-Phase Mark & Sweep (`pkg/prune`)** |
+| **Process Admission & Limits**| Unbounded fork | Unbounded fork | None | **Token Bucket & Memory Governor (`pkg/sched`)** |
+| **Live Telemetry Server** | Cloud only | Cloud only | None | **Native Prometheus `/metrics` & OTLP (`pkg/sched`)** |
+| **Supply-Chain Attestation**| Custom JSON | None | None | **SLSA v1.0 in DSSE Envelopes (`pkg/capsule/dsse.go`)** |
 
 ---
 

@@ -63,8 +63,19 @@ func SignBeacon(b PeerBeacon, clusterKey string) string {
 }
 
 func VerifyBeacon(b PeerBeacon, clusterKey string) bool {
+	return VerifyBeaconWithMaxAge(b, clusterKey, 60*time.Second)
+}
+
+func VerifyBeaconWithMaxAge(b PeerBeacon, clusterKey string, maxAge time.Duration) bool {
 	if clusterKey == "" {
 		return true
+	}
+	if maxAge > 0 && b.Timestamp > 0 {
+		now := time.Now().Unix()
+		ageSec := int64(maxAge.Seconds())
+		if b.Timestamp < now-ageSec || b.Timestamp > now+15 {
+			return false // Replay attack or excessive clock skew detected
+		}
 	}
 	expected := SignBeacon(b, clusterKey)
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(b.Signature)) == 1

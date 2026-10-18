@@ -229,7 +229,7 @@ func (s *Server) handleMessage(req *RequestMessage) {
 		}
 		s.writeLSPFrame(ResponseMessage{JSONRPC: "2.0", ID: req.ID, Result: res})
 
-	case "initialized":
+	case "initialized", "$/cancelRequest":
 		// No response needed for notification
 
 	case "shutdown":
