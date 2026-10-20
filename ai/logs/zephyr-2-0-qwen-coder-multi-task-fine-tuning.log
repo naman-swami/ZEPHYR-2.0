@@ -1,0 +1,60 @@
+[{"stream_name":"stderr","time":6.118743169,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":6.118797476,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":6.118803833,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":6.118807998,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":6.675993471,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":6.676019126,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":6.676023686,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":6.676027354,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":9.175846173,"data":"Found existing installation: torchvision 0.26.0+cu128\r\n"}
+,{"stream_name":"stdout","time":9.226103348,"data":"Uninstalling torchvision-0.26.0+cu128:\r\n"}
+,{"stream_name":"stdout","time":9.378237167,"data":"  Successfully uninstalled torchvision-0.26.0+cu128\r\n"}
+,{"stream_name":"stdout","time":9.530294593,"data":"Found existing installation: torchao 0.10.0\r\n"}
+,{"stream_name":"stdout","time":9.631425153,"data":"Uninstalling torchao-0.10.0:\r\n"}
+,{"stream_name":"stdout","time":9.884755018,"data":"  Successfully uninstalled torchao-0.10.0\r\n"}
+,{"stream_name":"stdout","time":13.858439129,"data":"[OK] Environment configured successfully!\n"}
+,{"stream_name":"stdout","time":18.899534015,"data":"[OK] Dataset found at: /kaggle/input/datasets/naman1swami/zephyr-multitask-70k/zephyr_multitask_70k.jsonl\n"}
+,{"stream_name":"stdout","time":35.446522329,"data":"Loading Qwen2.5-Coder-0.5B-Instruct...\n"}
+,{"stream_name":"stderr","time":36.579436565,"data":"Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n"}
+,{"stream_name":"stderr","time":36.579471038,"data":"\n"}
+,{"stream_name":"stderr","time":36.579476323,"data":"Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n"}
+,{"stream_name":"stdout","time":39.099337028,"data":"Using device: cuda, bf16: True\n"}
+,{"stream_name":"stderr","time":39.309173842,"data":"[transformers] `torch_dtype` is deprecated! Use `dtype` instead!\n"}
+,{"stream_name":"stderr","time":39.309201909,"data":"\n"}
+,{"stream_name":"stderr","time":39.309207094,"data":"[transformers] `torch_dtype` is deprecated! Use `dtype` instead!\n"}
+,{"stream_name":"stdout","time":51.53007016,"data":"[OK] Base model loaded in bfloat16 (~0.98 GB VRAM)!\n"}
+,{"stream_name":"stdout","time":54.486541201,"data":"trainable params: 17,596,416 || all params: 511,629,184 || trainable%: 3.4393\n"}
+,{"stream_name":"stdout","time":57.23906125,"data":"[OK] Loaded 70000 raw training examples!\n"}
+,{"stream_name":"stdout","time":72.310739263,"data":"[OK] Tokenized 70000 samples successfully!\n"}
+,{"stream_name":"stderr","time":76.306055044,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":76.306770447,"data":"  File \"\u003cstring\u003e\", line 1, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":76.306793595,"data":"    import sys;import papermill as pm;pm.execute_notebook(\"__notebook__.ipynb\",\"__notebook__.ipynb\",progress_bar=False,log_output=True,stdout_file=sys.stdout,stderr_file=sys.stderr,allow_errors=False,timeout=43200)\n"}
+,{"stream_name":"stderr","time":76.30681112,"data":"                                      ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":76.306815286,"data":"  File \"/usr/local/lib/python3.13/dist-packages/papermill/execute.py\", line 131, in execute_notebook\n"}
+,{"stream_name":"stderr","time":76.306819431,"data":"    raise_for_execution_errors(nb, output_path)\n"}
+,{"stream_name":"stderr","time":76.306823384,"data":"    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":76.3068272,"data":"  File \"/usr/local/lib/python3.13/dist-packages/papermill/execute.py\", line 251, in raise_for_execution_errors\n"}
+,{"stream_name":"stderr","time":76.306831288,"data":"    raise error\n"}
+,{"stream_name":"stderr","time":76.306835132,"data":"papermill.exceptions.PapermillExecutionError: \n"}
+,{"stream_name":"stderr","time":76.306838668,"data":"---------------------------------------------------------------------------\n"}
+,{"stream_name":"stderr","time":76.306842705,"data":"Exception encountered at \"In [5]\":\n"}
+,{"stream_name":"stderr","time":76.306846514,"data":"---------------------------------------------------------------------------\n"}
+,{"stream_name":"stderr","time":76.306850445,"data":"TypeError                                 Traceback (most recent call last)\n"}
+,{"stream_name":"stderr","time":76.30685445,"data":"/tmp/ipykernel_22/463452776.py in \u003ccell line: 0\u003e()\n"}
+,{"stream_name":"stderr","time":76.306857919,"data":"      2 from transformers import Trainer, TrainingArguments\n"}
+,{"stream_name":"stderr","time":76.306861281,"data":"      3 \n"}
+,{"stream_name":"stderr","time":76.30686445,"data":"----\u003e 4 training_args = TrainingArguments(\n"}
+,{"stream_name":"stderr","time":76.306867781,"data":"      5     output_dir='/kaggle/working/zephyr_coder_checkpoints',\n"}
+,{"stream_name":"stderr","time":76.306871142,"data":"      6     per_device_train_batch_size=8,\n"}
+,{"stream_name":"stderr","time":76.306874403,"data":"\n"}
+,{"stream_name":"stderr","time":76.306877481,"data":"TypeError: TrainingArguments.__init__() got an unexpected keyword argument 'warmup_ratio'\n"}
+,{"stream_name":"stderr","time":76.306880949,"data":"\n"}
+,{"stream_name":"stderr","time":78.307582663,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":78.307619201,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":78.467883115,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":78.467913622,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":79.17195319,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":79.263591534,"data":"[NbConvertApp] Writing 154360 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":81.62742045,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":82.142893679,"data":"[NbConvertApp] Writing 412042 bytes to __results__.html\n"}
+]

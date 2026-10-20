@@ -1,0 +1,10 @@
+{
+  "model_id": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+  "total_steps": 2187,
+  "final_loss": 0.03185461044311524,
+  "dataset_samples": 70000,
+  "lora_r": 32,
+  "lora_alpha": 64,
+  "lora_dropout": 0.05,
+  "status": "SUCCESS"
+}

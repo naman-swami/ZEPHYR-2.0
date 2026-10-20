@@ -31,13 +31,17 @@ import (
 	"taskrunner/pkg/agent"
 	"taskrunner/pkg/bench"
 	"taskrunner/pkg/capsule"
+	"taskrunner/pkg/heal"
 	"taskrunner/pkg/lsp"
 	mcpserver "taskrunner/pkg/mcp"
+	"taskrunner/pkg/organize"
 	"taskrunner/pkg/p2p"
 	"taskrunner/pkg/profile"
 	"taskrunner/pkg/prune"
 	"taskrunner/pkg/sched"
+	"taskrunner/pkg/shell"
 	"taskrunner/pkg/stress"
+	"taskrunner/pkg/vault"
 	"taskrunner/pkg/verify"
 )
 
@@ -3126,6 +3130,12 @@ func printUsage() {
 	fmt.Println("  list                  Display configured tasks in formatted table")
 	fmt.Println("  graph                 Render dependency graph (ASCII or Mermaid)")
 	fmt.Println("  prune, clean          Crash-safe LRU cache pruning by size, age, or referential mark/sweep")
+	fmt.Println("  heal <file>           Self-healing code repair with deterministic AST gate")
+	fmt.Println("  diagnose <output>     Root-cause build failure diagnosis and action items")
+	fmt.Println("  organize <subcmd>     Automated workspace layout & AI token optimizer (analyze, plan, apply, undo)")
+	fmt.Println("  vault <subcmd>        AI credential isolation & bidirectional .env secret reconciler")
+	fmt.Println("  shell                 Interactive workspace terminal session (keeps console open)")
+	fmt.Println("  install-shell         Register ZEPHYR in Windows File Explorer address bar & context menu")
 	fmt.Println("  version               Display version and platform info")
 	fmt.Println("  help                  Display this usage guide")
 	fmt.Println("\nRun Flags:")
@@ -4234,6 +4244,432 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "heal":
+		fs := flag.NewFlagSet("heal", flag.ExitOnError)
+		diag := fs.String("diag", "", "Compiler or linter error message")
+		lang := fs.String("lang", "", "Language (python, go, javascript)")
+		dryRun := fs.Bool("dry-run", false, "Preview proposed diff without modifying files")
+		fs.Parse(args)
+
+		targetFiles := fs.Args()
+		if len(targetFiles) == 0 {
+			fmt.Fprintf(os.Stderr, "%sError: specify target file to heal (e.g. 'zephyr heal main.py')%s\n", ColorRed, ColorReset)
+			os.Exit(1)
+		}
+
+		targetFile := targetFiles[0]
+		fmt.Printf("%s⚡ ZEPHYR 2.0 Self-Healing Engine: Deterministic AST Gate%s\n", ColorCyan, ColorReset)
+		fmt.Printf("  Target File: %s\n", targetFile)
+
+		res, err := heal.RepairFile(ctx, heal.HealRequest{
+			FilePath:   targetFile,
+			Diagnostic: *diag,
+			Language:   *lang,
+			DryRun:     *dryRun,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%sHeal Error:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+
+		if !res.Success {
+			fmt.Printf("%s[HEAL REJECTED]%s %s\n", ColorRed, ColorReset, res.GateError)
+			os.Exit(1)
+		}
+
+		fmt.Printf("%s[HEAL SUCCESS]%s Proposed patch passed deterministic verification gate!\n", ColorGreen, ColorReset)
+		if res.UnifiedDiff != "" {
+			fmt.Println("\n--- Unified Diff ---")
+			fmt.Println(res.UnifiedDiff)
+		}
+		if *dryRun {
+			fmt.Printf("%s[DRY RUN]%s No changes were written to disk.\n", ColorYellow, ColorReset)
+		} else {
+			fmt.Printf("%s[COMMITTED]%s Repaired file written and signed.\n", ColorGreen, ColorReset)
+			fmt.Printf("  Provenance Digest: %s\n", res.ProvenanceDigest)
+		}
+
+	case "diagnose":
+		var compilerOutput string
+		if len(args) > 0 {
+			compilerOutput = strings.Join(args, " ")
+		} else {
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) == 0 {
+				bytesIn, _ := io.ReadAll(os.Stdin)
+				compilerOutput = string(bytesIn)
+			}
+		}
+
+		if strings.TrimSpace(compilerOutput) == "" {
+			fmt.Fprintf(os.Stderr, "%sUsage: zephyr diagnose <compiler output / log>%s\n", ColorRed, ColorReset)
+			os.Exit(1)
+		}
+
+		fmt.Printf("%s⚡ ZEPHYR 2.0 AI Build Diagnostics Engine%s\n", ColorCyan, ColorReset)
+		diagScript := filepath.Join("ai", "zephyr_engine.py")
+		if _, err := os.Stat(diagScript); err == nil {
+			cmd := exec.CommandContext(ctx, "python", diagScript, "diagnose", compilerOutput)
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				var parsed struct {
+					Explanation string `json:"explanation"`
+					ActionItem  string `json:"action_item"`
+				}
+				if json.Unmarshal(out, &parsed) == nil {
+					fmt.Printf("\n%sRoot Cause:%s %s\n", ColorYellow, ColorReset, parsed.Explanation)
+					fmt.Printf("%sAction Item:%s %s\n", ColorGreen, ColorReset, parsed.ActionItem)
+					return
+				}
+			}
+		}
+		fmt.Printf("\n%sRoot Cause:%s Execution failure detected in pipeline.\n", ColorYellow, ColorReset)
+		fmt.Printf("%sAction Item:%s Check tasks.json command arguments and run 'zephyr why' for cache diagnostics.\n", ColorGreen, ColorReset)
+
+	case "organize", "layout":
+		if len(args) == 0 {
+			fmt.Printf("%s⚡ ZEPHYR 2.0 Workspace & AI Token Optimizer%s\n", ColorCyan, ColorReset)
+			fmt.Println("Usage: zephyr organize <analyze|plan|apply|undo> [options...]")
+			fmt.Println("\nSubcommands:")
+			fmt.Println("  analyze         Audit workspace entropy and AI agent token overhead")
+			fmt.Println("  plan            Generate preview of proposed directory hierarchy")
+			fmt.Println("  apply           Execute atomic reorganization with verification safety gate")
+			fmt.Println("  undo            Instant rollback to state before last reorganization")
+			fmt.Println("\nFlags:")
+			fmt.Println("  --dir <path>    Target directory to organize (default: current directory)")
+			fmt.Println("  --preset <name> Architecture layout preset: standard-go (default), clean-arch")
+			fmt.Println("  --dry-run       Preview file relocations without touching disk")
+			fmt.Println("  --verify        Run post-organization compiler check with automatic rollback on error")
+			fmt.Println("  --allow-dirty   Allow organization with uncommitted git modifications")
+			fmt.Println("  --json          Emit machine-readable JSON output")
+			os.Exit(1)
+		}
+
+		subCmd := args[0]
+		subArgs := args[1:]
+
+		switch subCmd {
+		case "analyze":
+			fs := flag.NewFlagSet("organize analyze", flag.ExitOnError)
+			dir := fs.String("dir", ".", "Target directory to analyze")
+			jsonOut := fs.Bool("json", false, "Emit JSON report")
+			fs.Parse(subArgs)
+
+			targetDir, _ := filepath.Abs(*dir)
+			report, err := organize.Analyze(targetDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sAnalyze Error:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			if *jsonOut {
+				data, _ := json.MarshalIndent(report, "", "  ")
+				fmt.Println(string(data))
+				return
+			}
+
+			fmt.Printf("%s⚡ ZEPHYR 2.0 Workspace Entropy & Token Audit%s\n", ColorCyan, ColorReset)
+			fmt.Printf("  Target Workspace     : %s\n", report.WorkspaceRoot)
+			fmt.Printf("  Total Files Scanned  : %d files\n", report.TotalFiles)
+			fmt.Printf("  Root Level Files     : %d files\n", report.RootFilesCount)
+			fmt.Printf("  Entropy Score        : %.2f / 1.00\n", report.EntropyScore)
+			fmt.Printf("  Agent Token Overhead : ~%d tokens / directory listing\n", report.TokenOverheadListing)
+			if len(report.DetectedLanguages) > 0 {
+				fmt.Printf("  Detected Languages   : %s\n", strings.Join(report.DetectedLanguages, ", "))
+			}
+			fmt.Println("\nFile Category Breakdown:")
+			for cat, count := range report.CategoryDistribution {
+				fmt.Printf("  • %-12s : %d files\n", cat, count)
+			}
+			if len(report.RoleDistribution) > 0 {
+				fmt.Println("\nInferred Code Roles:")
+				for role, count := range report.RoleDistribution {
+					fmt.Printf("  • %-12s : %d source files\n", role, count)
+				}
+			}
+			if len(report.Recommendations) > 0 {
+				fmt.Printf("\n%sRecommendations:%s\n", ColorYellow, ColorReset)
+				for _, rec := range report.Recommendations {
+					fmt.Printf("  → %s\n", rec)
+				}
+			}
+
+		case "plan":
+			fs := flag.NewFlagSet("organize plan", flag.ExitOnError)
+			dir := fs.String("dir", ".", "Target directory to organize")
+			preset := fs.String("preset", "standard-go", "Layout preset (standard-go, clean-arch)")
+			dryRun := fs.Bool("dry-run", false, "Preview execution batches without moving files")
+			jsonOut := fs.Bool("json", false, "Emit JSON plan")
+			fs.Parse(subArgs)
+
+			targetDir, _ := filepath.Abs(*dir)
+			plan, err := organize.Plan(targetDir, *preset)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sPlan Error:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			if *jsonOut {
+				data, _ := json.MarshalIndent(plan, "", "  ")
+				fmt.Println(string(data))
+				return
+			}
+
+			fmt.Printf("%s⚡ ZEPHYR 2.0 Workspace Restructuring Plan (Preset: %s)%s\n", ColorCyan, plan.Preset, ColorReset)
+			fmt.Printf("  Target Workspace    : %s\n", plan.WorkspaceRoot)
+			fmt.Printf("  Total Files Scanned : %d\n", plan.TotalFiles)
+			fmt.Printf("  Relocations Planned : %d files\n", len(plan.Relocations))
+			if len(plan.DetectedCycles) > 0 {
+				fmt.Printf("%s  [WARNING] Cyclic Package Dependencies Detected: %d%s\n", ColorRed, len(plan.DetectedCycles), ColorReset)
+			} else {
+				fmt.Printf("%s  [GATE 3 PASS] Package Dependency Graph is Acyclic (0 cycles)%s\n", ColorGreen, ColorReset)
+			}
+
+			fmt.Printf("\n%sAI Agent Token Economics & Context Optimization:%s\n", ColorYellow, ColorReset)
+			fmt.Printf("  • Discovery Token Footprint : %d → %d tokens (%s%.1f%% savings%s)\n",
+				plan.AIImpact.RawListingTokensBefore,
+				plan.AIImpact.CleanListingTokensAfter,
+				ColorGreen, plan.AIImpact.TokenSavingsPercent, ColorReset)
+			fmt.Printf("  • Repo Map Token Outlines   : %d → %d tokens\n",
+				plan.AIImpact.RepoMapTokensBefore, plan.AIImpact.RepoMapTokensAfter)
+			fmt.Printf("  • Estimated Pass@1 Gain     : %s+%.1f%%%s\n",
+				ColorGreen, plan.AIImpact.EstimatedPass1Gain, ColorReset)
+
+			if len(plan.Relocations) > 0 {
+				fmt.Println("\nPlanned Relocations:")
+				w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+				fmt.Fprintln(w, "Source File\tTarget Location\tCategory\tRole\tNew Package")
+				fmt.Fprintln(w, "-----------\t---------------\t--------\t----\t-----------")
+				for _, op := range plan.Relocations {
+					pkg := op.PackageName
+					if pkg == "" {
+						pkg = "-"
+					}
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", op.SourcePath, op.DestPath, op.Category, op.Role, pkg)
+				}
+				w.Flush()
+			}
+			if *dryRun {
+				fmt.Printf("\n%s[DRY RUN]%s Zero filesystem changes were written to disk.\n", ColorYellow, ColorReset)
+			} else {
+				fmt.Printf("\nRun %szephyr organize apply --verify%s to execute this plan.\n", ColorBold, ColorReset)
+			}
+
+		case "apply":
+			fs := flag.NewFlagSet("organize apply", flag.ExitOnError)
+			dir := fs.String("dir", ".", "Target directory to organize")
+			preset := fs.String("preset", "standard-go", "Layout preset (standard-go, clean-arch)")
+			verify := fs.Bool("verify", true, "Run post-organization verification with automatic rollback")
+			allowDirty := fs.Bool("allow-dirty", false, "Allow organization with uncommitted changes")
+			fs.Parse(subArgs)
+
+			targetDir, _ := filepath.Abs(*dir)
+
+			// Gate 1: Git Status Cleanliness
+			if !*allowDirty {
+				if err := organize.CheckGitCleanliness(targetDir); err != nil {
+					fmt.Fprintf(os.Stderr, "%s[GATE 1 ERROR]%s %v\nPass --allow-dirty to bypass.\n", ColorRed, ColorReset, err)
+					os.Exit(1)
+				}
+			}
+
+			plan, err := organize.Plan(targetDir, *preset)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sPlan Error:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			if len(plan.Relocations) == 0 {
+				fmt.Printf("%s[ORGANIZED]%s Workspace is already in canonical layout. No files moved.\n", ColorGreen, ColorReset)
+				return
+			}
+
+			fmt.Printf("%s⚡ ZEPHYR 2.0 Applying Workspace Organization...%s\n", ColorCyan, ColorReset)
+			if err := organize.Apply(plan, *verify); err != nil {
+				fmt.Fprintf(os.Stderr, "%s[APPLY FAILED]%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			fmt.Printf("%s[SUCCESS]%s Successfully reorganized %d files into canonical hierarchy!\n", ColorGreen, ColorReset, len(plan.Relocations))
+			if *verify {
+				fmt.Printf("%s[GATE 5 PASS]%s Compiler verification passed with zero regressions.\n", ColorGreen, ColorReset)
+			}
+			fmt.Println("A cryptographic rollback journal was saved in .taskcache/reorg/latest.json.")
+			fmt.Printf("To undo this change at any time, run: %szephyr organize undo%s\n", ColorBold, ColorReset)
+
+		case "undo":
+			fs := flag.NewFlagSet("organize undo", flag.ExitOnError)
+			dir := fs.String("dir", ".", "Target directory to undo")
+			fs.Parse(subArgs)
+
+			targetDir, _ := filepath.Abs(*dir)
+			journal, err := organize.Undo(targetDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s[UNDO FAILED]%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			fmt.Printf("%s[UNDO SUCCESS]%s Reverted %d file operations from %s.\n",
+				ColorGreen, ColorReset, len(journal.Operations), journal.Timestamp.Format(time.RFC3339))
+			fmt.Println("All original files, directories, and contents have been restored.")
+
+		default:
+			fmt.Fprintf(os.Stderr, "%sUnknown organize subcommand '%s'. Valid subcommands: analyze, plan, apply, undo%s\n", ColorRed, subCmd, ColorReset)
+			os.Exit(1)
+		}
+
+	case "vault":
+		if len(args) == 0 {
+			fmt.Printf("%s⚡ ZEPHYR 2.0 AI Credential Vault & Secret Cloaking Shield%s\n", ColorCyan, ColorReset)
+			fmt.Println("Usage: zephyr vault <audit|cloak|merge> [options...]")
+			fmt.Println("\nSubcommands:")
+			fmt.Println("  audit             Scan workspace for exposed API keys and sensitive files")
+			fmt.Println("  cloak <file>      Produce AI-safe redacted view with synthetic secret placeholders")
+			fmt.Println("  merge <dst> <src> Reconcile AI-proposed edits while preserving authentic secrets")
+			fmt.Println("\nFlags:")
+			fmt.Println("  --dir <path>      Target directory to audit (default: current directory)")
+			fmt.Println("  --out <path>      Output file path for cloaked representation")
+			fmt.Println("  --json            Emit machine-readable JSON output")
+			os.Exit(1)
+		}
+
+		subCmd := args[0]
+		subArgs := args[1:]
+
+		switch subCmd {
+		case "audit":
+			fs := flag.NewFlagSet("vault audit", flag.ExitOnError)
+			dir := fs.String("dir", ".", "Directory to audit for exposed secrets")
+			jsonOut := fs.Bool("json", false, "Emit JSON audit report")
+			fs.Parse(subArgs)
+
+			targetDir, _ := filepath.Abs(*dir)
+			report, err := vault.AuditWorkspace(targetDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sAudit Error:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			if *jsonOut {
+				data, _ := json.MarshalIndent(report, "", "  ")
+				fmt.Println(string(data))
+				return
+			}
+
+			fmt.Printf("%s⚡ ZEPHYR 2.0 Workspace Credential Security Audit%s\n", ColorCyan, ColorReset)
+			fmt.Printf("  Target Workspace : %s\n", report.WorkspaceRoot)
+			fmt.Printf("  Files Inspected  : %d sensitive files\n", report.FilesAudited)
+			fmt.Printf("  Total Secrets    : %d detected credentials\n", report.TotalSecrets)
+			if report.ProtectedStatus == "SECURED" {
+				fmt.Printf("  Security Status  : %s%s%s (Zero unmasked credentials exposed)\n", ColorGreen, report.ProtectedStatus, ColorReset)
+			} else {
+				fmt.Printf("  Security Status  : %s%s%s (Exposed credentials detected! Cloaking required)\n", ColorRed, report.ProtectedStatus, ColorReset)
+			}
+
+			if len(report.Findings) > 0 {
+				fmt.Println("\nDetected Exposed Credentials:")
+				w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+				fmt.Fprintln(w, "File\tLine\tVariable Name\tRisk Level\tMasked Value")
+				fmt.Fprintln(w, "----\t----\t-------------\t----------\t------------")
+				for _, f := range report.Findings {
+					riskColor := ColorYellow
+					if f.Risk == vault.RiskCritical {
+						riskColor = ColorRed
+					}
+					fmt.Fprintf(w, "%s\t%d\t%s\t%s%s%s\t%s\n", f.FilePath, f.LineNumber, f.Key, riskColor, f.Risk, ColorReset, f.MaskedPreview)
+				}
+				w.Flush()
+				fmt.Println("\nTip: Run 'zephyr vault cloak <file>' before exposing configuration to AI agents.")
+			}
+
+		case "cloak":
+			fs := flag.NewFlagSet("vault cloak", flag.ExitOnError)
+			outPath := fs.String("out", "", "Output path to write cloaked file (prints to stdout if empty)")
+			fs.Parse(subArgs)
+
+			targetFile := ".env"
+			if len(fs.Args()) > 0 {
+				targetFile = fs.Args()[0]
+			}
+
+			res, err := vault.CloakFile(targetFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sCloak Error:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			if *outPath != "" {
+				if err := os.WriteFile(*outPath, []byte(res.CloakedContent), 0600); err != nil {
+					fmt.Fprintf(os.Stderr, "Error writing cloaked output: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("%s[CLOAKED]%s Protected %d secrets into '%s'. Safe for AI ingestion.\n", ColorGreen, ColorReset, res.SecretCount, *outPath)
+			} else {
+				fmt.Println(res.CloakedContent)
+			}
+
+		case "merge":
+			if len(subArgs) < 2 {
+				fmt.Println("Usage: zephyr vault merge <target_env_file> <ai_proposed_file>")
+				os.Exit(1)
+			}
+
+			targetFile := subArgs[0]
+			proposedFile := subArgs[1]
+
+			existBytes, err := os.ReadFile(targetFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading target env file: %v\n", err)
+				os.Exit(1)
+			}
+
+			propBytes, err := os.ReadFile(proposedFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading proposed file: %v\n", err)
+				os.Exit(1)
+			}
+
+			res, err := vault.ApplyMergeToFile(targetFile, string(existBytes), string(propBytes))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%sMerge Error:%s %v\n", ColorRed, ColorReset, err)
+				os.Exit(1)
+			}
+
+			fmt.Printf("%s[MERGE SUCCESS]%s Reconciled AI configuration changes safely!\n", ColorGreen, ColorReset)
+			fmt.Printf("  Target File       : %s\n", res.TargetFile)
+			fmt.Printf("  Preserved Secrets : %d credentials retained intact\n", res.PreservedSecrets)
+			if len(res.AddedVariables) > 0 {
+				fmt.Printf("  Added Variables   : %s\n", strings.Join(res.AddedVariables, ", "))
+			}
+			if len(res.UpdatedVariables) > 0 {
+				fmt.Printf("  Updated Variables : %s\n", strings.Join(res.UpdatedVariables, ", "))
+			}
+			fmt.Println("Zero authentic credentials were overwritten or exposed to AI agents.")
+
+		default:
+			fmt.Fprintf(os.Stderr, "%sUnknown vault subcommand '%s'. Valid subcommands: audit, cloak, merge%s\n", ColorRed, subCmd, ColorReset)
+			os.Exit(1)
+		}
+
+	case "shell", "repl":
+		exePath, err := os.Executable()
+		if err != nil {
+			exePath = "zephyr"
+		}
+		origWd, _ := os.Getwd()
+		shell.RunInteractiveREPL(origWd, exePath)
+
+	case "install-shell", "register":
+		exePath, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to resolve executable: %v\n", err)
+			os.Exit(1)
+		}
+		if err := shell.RegisterWindowsExplorer(exePath); err != nil {
+			fmt.Fprintf(os.Stderr, "%sRegistration Error:%s %v\n", ColorRed, ColorReset, err)
+			os.Exit(1)
+		}
+
 	case "version", "--version", "-v":
 		fmt.Printf("%s (%s/%s, 100%% Go stdlib by %s)\n", ProjectName, runtime.GOOS, runtime.GOARCH, Author)
 
@@ -4241,7 +4677,7 @@ func main() {
 		printUsage()
 
 	default:
-		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "lsp", "p2p", "profile", "bench", "stress", "watch", "doctor", "affected", "server", "list", "graph", "clean", "prune", "version", "help"})
+		suggestions := SuggestSimilarTask(cmd, []string{"run", "verify", "capsule", "adopt", "agent", "mcp", "lsp", "p2p", "profile", "bench", "stress", "watch", "doctor", "affected", "server", "list", "graph", "clean", "prune", "heal", "diagnose", "organize", "version", "help"})
 		fmt.Fprintf(os.Stderr, "%sUnknown command '%s'.%s", ColorRed, cmd, ColorReset)
 		if len(suggestions) > 0 {
 			fmt.Fprintf(os.Stderr, " Did you mean: '%s'?", strings.Join(suggestions, "', '"))

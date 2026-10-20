@@ -1,0 +1,9 @@
+{
+  "title": "ZEPHYR 2.0 Multi-Task 70k Dataset",
+  "id": "naman1swami/zephyr-multitask-70k",
+  "licenses": [
+    {
+      "name": "MIT"
+    }
+  ]
+}

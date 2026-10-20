@@ -1,0 +1,17 @@
+{
+  "id": "naman1swami/zephyr-2-0-qwen-coder-multi-task-fine-tuning",
+  "title": "ZEPHYR 2.0 Qwen Coder Multi-Task Fine-Tuning",
+  "code_file": "kaggle_train_zephyr.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_tpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "naman1swami/zephyr-multitask-70k"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
