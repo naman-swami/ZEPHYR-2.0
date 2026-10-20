@@ -18,6 +18,7 @@ bin/
 .cache-server/
 *.zcap
 *.zip
+*.pdf
 # Media & Recordings
 *.mp4
 *.avi
