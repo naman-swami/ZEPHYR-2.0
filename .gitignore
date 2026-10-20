@@ -24,8 +24,6 @@ bin/
 *.webm
 *.jpg
 *.png
-!docs/assets/*.jpg
-!docs/assets/*.png
 
 # OS / Editor Files
 .DS_Store
